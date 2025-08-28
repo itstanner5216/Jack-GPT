@@ -1076,7 +1076,9 @@ loadDefaults();
 </body>
 </html>\`;
 
-// ---------------------- Manifest ----------------------
+// ... whatever code is here is the problem ...
+; // <-- this ends the prior statement cleanly
+
 const MANIFEST_JSON = JSON.stringify({
   name: "Jack Portal",
   short_name: "Jack",
