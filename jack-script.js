@@ -1069,15 +1069,17 @@ goBtn.addEventListener("click", async () => {
   } catch (e) {
     setStatus("error");
     debugEl.textContent = String(e);
+// ...
   }
 });
 loadDefaults();
 </script>
 </body>
-</html>\`;
+</html>`; // <<< ADD THE SEMICOLON HERE
 
-// ... whatever code is here is the problem ...
-; // <-- this ends the prior statement cleanly
+// ---------------------- Manifest ----------------------
+const MANIFEST_JSON = JSON.stringify({
+// ...
 
 const MANIFEST_JSON = JSON.stringify({
   name: "Jack Portal",
