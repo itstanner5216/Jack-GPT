@@ -987,7 +987,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(()=>{});
 }
 
-const API_BASE = '/aggregate';
+const API_BASE = 'https://jack-aggregator.jacobthaywood.workers.dev/aggregate';
 
 // UI refs
 const qEl = document.getElementById("q");
