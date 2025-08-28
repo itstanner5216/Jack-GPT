@@ -908,7 +908,7 @@ const PORTAL_HTML = `<!DOCTYPE html>
       </div>
     </div>
     <div class="actions">
-      <button id="goBtn" onclick="window.go && window.go()">Search</button>
+      <button id="goBtn">Search</button>
       <button class="secondary" id="copyBtn" type="button">Copy results</button>
       <button class="ghost" id="dbgBtn" type="button">Toggle debug</button>
       <button class="secondary" id="saveBtn" type="button">Save defaults</button>
