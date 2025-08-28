@@ -1093,7 +1093,8 @@ const MANIFEST_JSON = JSON.stringify({
 });
 
 // ---------------- Service Worker payload (served at /sw.js) ----------------
-const SW_JS = `self.addEventListener('install', (e) => {
+const SW_JS = `
+self.addEventListener('install', (e) => {
   self.skipWaiting?.();
 });
 self.addEventListener('activate', (e) => {
@@ -1101,7 +1102,8 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (event) => {
   // passthrough; add caching here if you want
-});`;
+});
+`;
 
 // ------------------- Icons -------------------
 const ICON_192 = "/icon-192.png";
