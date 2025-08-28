@@ -1002,7 +1002,8 @@ function buildUrl(){
   const site = siteEl.value.trim(); if (site) p.set("site", site);
   p.set("hostMode", hostModeSel.value || "normal");
   p.set("durationMode", durationModeSel.value || "normal");
-  return API_BASE + "?" + p.toString() + "&nocache=1";
+  p.set("nocache", "1"); // always bypass cache for live tests
+  return API_BASE + "?" + p.toString();
 }
 function cardHtml(item, showThumb){
   const t = item.title || "clip";
