@@ -1025,7 +1025,7 @@ function buildUrl(){
   const site = siteEl.value.trim(); if (site) p.set("site", site);
   p.set("hostMode", hostModeSel.value || "normal");
   p.set("durationMode", durationModeSel.value || "normal");
-  return API_BASE + "?" + p.toString();
+  return API_BASE + "?" + p.toString() + "&nocache=1";
 }
 
 function cardHtml(item, showThumb){
