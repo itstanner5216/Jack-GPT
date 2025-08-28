@@ -79,22 +79,13 @@ async function handleFetch(request, ctx) {
     return handleAggregate(request, {}, ctx);
   }
 
-  // Icons passthrough
-  if (path === "/icon-192.png") {
-    return fetch(
-      "https://drive.google.com/uc?export=download&id=1NR2khBpnZRDk658mgSUV57UdifpzXbql",
-      { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } }
-    );
-  }
-  if (path === "/icon-512.png") {
-    return fetch(
-      "https://drive.google.com/uc?export=download&id=14AXEmr-wPzWFr14OvY705AAshA9ZUDmo",
-      { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } }
-    );
-  }
+  // Icons (serve from GitHub raw URLs directly)
+if (path === "/icon-192.png") {
+  return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icons/icon-192.png");
+}
 
-  // Passthrough for anything else (keep this LAST)
-  return fetch(request);
+if (path === "/icon-512.png") {
+  return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icons/icon-512.png");
 }
 
 // -------------------------- Aggregator --------------------------
