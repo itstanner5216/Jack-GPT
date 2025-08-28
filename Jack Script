@@ -1112,7 +1112,7 @@ goBtn.addEventListener("click", async ()=>{
 const r = await fetch(u, { cache: "no-store" });
 if (!r.ok) {
   const t = await r.text();
-  debugEl.textContent = `HTTP ${r.status} — ${t}`;
+  debugEl.textContent = ’HTTP ’ + r.status + ’ — ’ + t;
   setStatus('error');
   return;
 }
