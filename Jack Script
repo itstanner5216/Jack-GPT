@@ -1149,7 +1149,7 @@ self.addEventListener('fetch', e => {
     url.pathname === '/icon-512.png';
   if (isShell) {
     e.respondWith(
-      caches.open('jack-shell-v2').then(async cache => {
+      caches.open('jack-shell-v3').then(async cache => {
         const hit = await cache.match(e.request);
         return hit || fetch(e.request);
       })
