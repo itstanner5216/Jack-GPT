@@ -1,95 +1,66 @@
 // @ts-nocheck
-// jack-all-in-one (root UI + /aggregate API + PWA assets)
-//
-// Routes:
-//   /                    -> HTML UI (installable PWA)
-//   /aggregate           -> JSON API
-//   /site.webmanifest    -> manifest
-//   /sw.js               -> service worker
-//   /icon-192.png        -> app icon
-//   /icon-512.png        -> app icon
-//
-// Updates:
-// - Orientation always LENIENT (no UI toggle).
-// - Freshness supports d7/m1/m3/y1/**all** (no time limit). Progressive widen d7→m1→m3→y1→all.
-// - First pass auto-appends exact phrase "gay porn" ONLY on pass 1.
-// - Second pass (if thin) enables video dorks (host URL patterns) and removes the phrase.
-// - Niche dork = multi-site host scoping; NO keyword stuffing.
-// - Listing-page harvester converts trusted listings into direct video candidates.
-// - Duration & dedup more forgiving. Host relax + secondary hosts supported.
-// - Archive mode allowed; no extra filters added here.
-// - LooksLikeSearchUrl tuned to reduce false positives.
-// - Allows incomplete metadata to pass when reasonable.
+// Jack All-in-One — UI + /aggregate API + PWA assets
 
 const BASE_PATH = "/";
 
-// Small helpers used by router/UI
-function joinPath(base, leaf){
-  const b = base.endsWith("/") ? base.slice(0, -1) : base;
-  return b + "/" + leaf;
-}
-function htmlResponse(html, code=200){
-  return new Response(html, {
-    status: code,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store"
+// ----------------------------- Router (entry) -----------------------------
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // Root UI
+    if (path === BASE_PATH || (BASE_PATH !== "/" && path === BASE_PATH.replace(/\/$/, ""))) {
+      return htmlResponse(PORTAL_HTML, 200);
     }
-  });
-}
 
-addEventListener("fetch", (event) => {
-  event.respondWith(handleFetch(event.request, event));
-});
+    // Manifest (both paths)
+    if (path === joinPath(BASE_PATH, "site.webmanifest") || path === "/manifest.json") {
+      return new Response(MANIFEST_JSON, {
+        status: 200,
+        headers: {
+          "content-type": "application/manifest+json; charset=utf-8",
+          "cache-control": "public, max-age=3600"
+        }
+      });
+    }
 
-async function handleFetch(request, ctx) {
-  const url = new URL(request.url);
-  const path = url.pathname;
+    // Service worker
+    if (path === joinPath(BASE_PATH, "sw.js")) {
+      return new Response(SW_JS, {
+        status: 200,
+        headers: {
+          "content-type": "application/javascript; charset=utf-8",
+          "cache-control": "no-store"
+        }
+      });
+    }
 
-  // PWA assets + UI at root
-  if (path === BASE_PATH || (BASE_PATH !== "/" && path === BASE_PATH.replace(/\/$/,""))) {
-    return htmlResponse(PORTAL_HTML, 200);
+    // API on same origin (kept here; UI points to external aggregator per your setup)
+    if (path === "/aggregate") {
+      return handleAggregate(request, env, ctx);
+    }
+
+    // Icons (use your GitHub RAW permalinks)
+    if (path === "/icon-192.png") {
+      return fetch(
+        "https://raw.githubusercontent.com/itstanner5216/Jack-GPT/103e0fd11ed55e09d8218fc32162c09e22c6dfbd/icon_jackportal_fixed_192.png",
+        { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } }
+      );
+    }
+    if (path === "/icon-512.png") {
+      return fetch(
+        "https://raw.githubusercontent.com/itstanner5216/Jack-GPT/103e0fd11ed55e09d8218fc32162c09e22c6dfbd/icon_jackportal_fixed_512.png",
+        { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } }
+      );
+    }
+
+    // Catch-all passthrough
+    return fetch(request);
   }
+};
 
-  // Manifest
-  if (path === joinPath(BASE_PATH, "site.webmanifest") || path === "/manifest.json") {
-    return new Response(MANIFEST_JSON, {
-      status: 200,
-      headers: {
-        "content-type": "application/manifest+json; charset=utf-8",
-        "cache-control": "public, max-age=3600"
-      }
-    });
-  }
-
-  // Service worker
-  if (path === joinPath(BASE_PATH, "sw.js")) {
-    return new Response(SW_JS, {
-      status: 200,
-      headers: {
-        "content-type": "application/javascript; charset=utf-8",
-        "cache-control": "no-store"
-      }
-    });
-  }
-
-  // Aggregator API
-  if (path === "/aggregate") {
-    // Pass empty env if you don't use KV/bindings in this worker
-    return handleAggregate(request, {}, ctx);
-  }
-
-  // Icons (serve from GitHub raw URLs directly)
-if (path === "/icon-192.png") {
-  return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icons/icon-192.png");
-}
-
-if (path === "/icon-512.png") {
-  return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icons/icon-512.png");
-}
-
-// -------------------------- Aggregator --------------------------
-
+// ----------------------------- API (/aggregate) -----------------------------
 async function handleAggregate(request, env, ctx) {
   const CORS_HEADERS = {
     "access-control-allow-origin": "*",
@@ -97,13 +68,15 @@ async function handleAggregate(request, env, ctx) {
     "access-control-allow-headers": "*"
   };
 
-  const jerr = (msg, code=400) =>
+  const jerr = (msg, code = 400) =>
     new Response(JSON.stringify({ error: msg }, null, 2), {
-      status: code, headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8" }
+      status: code,
+      headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8" }
     });
-  const jok = (data, code=200) =>
+  const jok = (data, code = 200) =>
     new Response(JSON.stringify(data, null, 2), {
-      status: code, headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8" }
+      status: code,
+      headers: { ...CORS_HEADERS, "content-type": "application/json; charset=utf-8" }
     });
 
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -111,13 +84,13 @@ async function handleAggregate(request, env, ctx) {
 
   const url = new URL(request.url);
 
-  // Edge cache (allow bypass via ?nocache=1)
+  // Edge cache (bypass via ?nocache=1)
   const edgeCache = caches.default;
   const bypassCache = url.searchParams.get("nocache") === "1";
   if (!bypassCache) {
     const cached = await edgeCache.match(request);
     if (cached) return cached;
-  }
+}
 
   // ---------- Config (orientation locked lenient)
   const relaxHosts   = (url.searchParams.get("hostMode") || String(env?.HOST_MODE || "")).toLowerCase() === "relaxed";
