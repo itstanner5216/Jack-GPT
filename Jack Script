@@ -984,7 +984,7 @@ const PORTAL_HTML = `<!DOCTYPE html>
 <script>
 // Register service worker (A2HS)
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register(BASE_PATH + 'sw.js', { scope: '/' }).catch(()=>{});
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(()=>{});
 }
 
 const API_BASE = '/aggregate';
