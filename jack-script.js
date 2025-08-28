@@ -1090,35 +1090,15 @@ const MANIFEST_JSON = JSON.stringify({
   ]
 });
 
-// ---------------------- Service Worker ----------------------
-const SW_JS =
-`self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open('jack-shell-v2').then(c => c.addAll([
-      '/',
-      '/manifest.json',
-      '/icon-192.png',
-      '/icon-512.png'
-    ]))
-  );
-  self.skipWaiting();
+// ---------------- Service Worker payload (served at /sw.js) ----------------
+const SW_JS = `self.addEventListener('install', (e) => {
+  self.skipWaiting?.();
 });
-self.addEventListener('activate', e => { self.clients.claim(); });
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  const isShell =
-    url.pathname === '/' ||
-    url.pathname === '/manifest.json' ||
-    url.pathname === '/icon-192.png' ||
-    url.pathname === '/icon-512.png';
-  if (isShell) {
-    e.respondWith(
-      caches.open('jack-shell-v3').then(async cache => {
-        const hit = await cache.match(e.request);
-        return hit || fetch(e.request);
-      })
-    );
-  }
+self.addEventListener('activate', (e) => {
+  e.waitUntil(self.clients.claim?.());
+});
+self.addEventListener('fetch', (event) => {
+  // passthrough; add caching here if you want
 });`;
 
 // ------------------- Icons -------------------
