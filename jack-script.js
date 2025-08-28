@@ -1092,16 +1092,15 @@ const MANIFEST_JSON = JSON.stringify({
   ]
 });
 
-// ---------------- Service Worker payload (served at /sw.js) ----------------
-const SW_JS = "self.addEventListener('install', (e) => {\n" +
-  "  self.skipWaiting?.();\n" +
-  "});\n" +
-  "self.addEventListener('activate', (e) => {\n" +
-  "  e.waitUntil(self.clients.claim?.());\n" +
-  "});\n" +
-  "self.addEventListener('fetch', (event) => {\n" +
-  "  // passthrough; add caching here if you want\n" +
-  "});";
+Worker payload (served at /sw.js) ----------------
+const SW_JS = "const CACHE_NAME = 'jack-portal-v1';\n" +
+  "const ASSETS_TO_CACHE = [\n" +
+  "  '/',\n" +
+  "  '/icon-192.png',\n" +
+  "  '/icon-512.png',\n" +
+  "  '/site.webmanifest',\n" +
+  "  '/manifest.json'\n" +
+  "];\n\n" +
 
 // ------------------- Icons -------------------
 const ICON_192 = "/icon-192.png";
