@@ -25,16 +25,18 @@ export default {
       });
     }
 
-    // Service worker
-    if (path === joinPath(BASE_PATH, "sw.js")) {
-      return new Response(SW_JS, {
-        status: 200,
-        headers: {
-          "content-type": "application/javascript; charset=utf-8",
-          "cache-control": "no-store"
-        }
-      });
+    // Service worker endpoint
+if (path === joinPath(BASE_PATH, "sw.js")) {
+  return new Response(SW_JS, {
+    status: 200,
+    headers: {
+      "content-type": "application/javascript; charset=utf-8",
+      "cache-control": "no-store",
+      // If BASE_PATH isn’t “/”, let the SW control your whole app scope:
+      "Service-Worker-Allowed": BASE_PATH // or "/" if you want root scope
     }
+  });
+}
 
     // API on same origin
     if (path === "/aggregate") {
