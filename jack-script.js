@@ -1094,7 +1094,7 @@ const MANIFEST_JSON = JSON.stringify({
   ]
 });
 
-Worker payload (served at /sw.js) ----------------
+// ---------------- Service Worker payload (served at /sw.js) ----------------
 const SW_JS = "const CACHE_NAME = 'jack-portal-v1';\n" +
   "const ASSETS_TO_CACHE = [\n" +
   "  '/',\n" +
@@ -1103,6 +1103,55 @@ const SW_JS = "const CACHE_NAME = 'jack-portal-v1';\n" +
   "  '/site.webmanifest',\n" +
   "  '/manifest.json'\n" +
   "];\n\n" +
+  "// Install event - cache assets\n" +
+  "self.addEventListener('install', (event) => {\n" +
+  "  event.waitUntil(\n" +
+  "    caches.open(CACHE_NAME)\n" +
+  "      .then((cache) => cache.addAll(ASSETS_TO_CACHE))\n" +
+  "      .then(() => self.skipWaiting())\n" +
+  "  );\n" +
+  "});\n\n" +
+  "// Activate event - clean up old caches\n" +
+  "self.addEventListener('activate', (event) => {\n" +
+  "  event.waitUntil(\n" +
+  "    caches.keys().then((cacheNames) => {\n" +
+  "      return Promise.all(\n" +
+  "        cacheNames.filter(name => name !== CACHE_NAME)\n" +
+  "          .map(name => caches.delete(name))\n" +
+  "      );\n" +
+  "    }).then(() => self.clients.claim())\n" +
+  "  );\n" +
+  "});\n\n" +
+  "// Fetch event - serve from cache if available, otherwise fetch from network\n" +
+  "self.addEventListener('fetch', (event) => {\n" +
+  "  // Skip cross-origin requests\n" +
+  "  if (!event.request.url.startsWith(self.location.origin)) return;\n" +
+  "  \n" +
+  "  // Skip API requests\n" +
+  "  if (event.request.url.includes('/aggregate')) return;\n" +
+  "  \n" +
+  "  event.respondWith(\n" +
+  "    caches.match(event.request)\n" +
+  "      .then((cachedResponse) => {\n" +
+  "        if (cachedResponse) {\n" +
+  "          return cachedResponse;\n" +
+  "        }\n" +
+  "        return fetch(event.request).then((response) => {\n" +
+  "          // Don't cache non-successful responses\n" +
+  "          if (!response || response.status !== 200) {\n" +
+  "            return response;\n" +
+  "          }\n" +
+  "          \n" +
+  "          // Clone the response to cache it and return it\n" +
+  "          const responseToCache = response.clone();\n" +
+  "          caches.open(CACHE_NAME).then((cache) => {\n" +
+  "            cache.put(event.request, responseToCache);\n" +
+  "          });\n" +
+  "          return response;\n" +
+  "        });\n" +
+  "      })\n" +
+  "  );\n" +
+  "});";
 
 // ------------------- Icons -------------------
 const ICON_192 = "/icon-192.png";
