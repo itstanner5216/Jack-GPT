@@ -1080,8 +1080,6 @@ loadDefaults();
 // ---------------------- Manifest ----------------------
 const MANIFEST_JSON = JSON.stringify({
 // ...
-
-const MANIFEST_JSON = JSON.stringify({
   name: "Jack Portal",
   short_name: "Jack",
   start_url: "/",
