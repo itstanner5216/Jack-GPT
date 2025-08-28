@@ -822,29 +822,17 @@ const PORTAL_HTML = `<!DOCTYPE html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Jack Portal</title>
-
 <link rel="manifest" href="/manifest.json">
-
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#000000">
-
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
 <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
-
 <style>
   :root {
-    --bg:#0b0b0c;
-    --panel:#141416;
-    --panel-2:#1a1b1e;
-    --muted:#9aa0a6;
-    --txt:#e9eaee;
-    --accent:#3b82f6;
-    --accent-2:#2563eb;
-    --ok:#22c55e;
-    --bad:#ef4444;
-    --radius:14px;
+    --bg:#0b0b0c; --panel:#141416; --panel-2:#1a1b1e; --muted:#9aa0a6; --txt:#e9eaee;
+    --accent:#3b82f6; --accent-2:#2563eb; --ok:#22c55e; --bad:#ef4444; --radius:14px;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -887,14 +875,12 @@ const PORTAL_HTML = `<!DOCTYPE html>
 <main>
   <div class="panel">
     <h2 class="title">Search</h2>
-
     <div class="row">
       <div>
         <label>Query</label>
         <input id="q" type="text" placeholder="Type a query" />
         <div class="muted" style="margin-top:6px">Duration accepts 5–12m, &lt;3m, &gt;10m, 7:30, PT1H5M</div>
       </div>
-
       <div>
         <label>Mode</label>
         <select id="modeSel">
@@ -913,7 +899,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
         </div>
       </div>
     </div>
-
     <div class="row-2" style="margin-top:12px">
       <div>
         <label>Freshness</label>
@@ -930,7 +915,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
         <input id="limit" type="number" value="20" min="3" max="20" />
       </div>
     </div>
-
     <div class="row-2" style="margin-top:12px">
       <div>
         <label>Duration</label>
@@ -941,7 +925,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
         <input id="site" type="text" placeholder="example.com" />
       </div>
     </div>
-
     <div class="row-2" style="margin-top:12px">
       <div>
         <label>Host Mode</label>
@@ -958,7 +941,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
         </select>
       </div>
     </div>
-
     <div class="actions">
       <button id="goBtn">Search</button>
       <button class="secondary" id="copyBtn" type="button">Copy results</button>
@@ -966,28 +948,23 @@ const PORTAL_HTML = `<!DOCTYPE html>
       <button class="secondary" id="saveBtn" type="button">Save defaults</button>
       <button class="ghost" id="resetBtn" type="button">Reset</button>
     </div>
-
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
       <input type="checkbox" id="showThumbs" checked /> <span class="muted">Show thumbnails (uses item.thumbnail if provided)</span>
     </label>
-
     <div class="muted" style="margin-top:12px">
       Modes map directly to the API; Freshness supports d7/m1/m3/y1/all (all = no time limit).
     </div>
   </div>
-
   <div id="results" class="grid" aria-live="polite" style="margin-top:16px"></div>
   <div id="debug" class="debug" style="margin-top:16px"></div>
   <div class="status" id="status">idle</div>
 </main>
-
 <script>
 // Register service worker (A2HS)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(()=>{});
 }
-
-const API_BASE = 'https://jack-aggregator.jacobthaywood.workers.dev/aggregate';
+const API_BASE = '/aggregate';
 // UI refs …
 const qEl = document.getElementById("q");
 const modeSel = document.getElementById("modeSel");
@@ -1027,7 +1004,6 @@ function buildUrl(){
   p.set("durationMode", durationModeSel.value || "normal");
   return API_BASE + "?" + p.toString() + "&nocache=1";
 }
-
 function cardHtml(item, showThumb){
   const t = item.title || "clip";
   const site = item.site || "";
@@ -1117,12 +1093,10 @@ goBtn.addEventListener("click", async () => {
     const r = await fetch(u, { cache: "no-store" });
     if (!r.ok) {
       const t = await r.text();
-      // FIX: Replaced smart quotes ’ with standard quotes '
-  debugEl.textContent = 'HTTP ' + r.status + ' — ' + t;
+      debugEl.textContent = 'HTTP ' + r.status + ' — ' + t;
       setStatus('error');
       return;
     }
-    // FIX: Moved the success logic inside the 'try' block
     const data = await r.json();
     render(data.results || []);
     debugEl.textContent = JSON.stringify(data.diag || data, null, 2);
@@ -1135,7 +1109,7 @@ goBtn.addEventListener("click", async () => {
 loadDefaults();
 </script>
 </body>
-</html>`;
+</html>\`;
 
 // ---------------------- Manifest ----------------------
 const MANIFEST_JSON = JSON.stringify({
