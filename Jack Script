@@ -1083,16 +1083,27 @@ resetBtn.addEventListener("click",()=>{
   setStatus("reset"); setTimeout(()=>setStatus("idle"),800);
 });
 copyBtn.addEventListener("click", async ()=>{
+  const data = [...resultsEl.querySelectorAll(".card")].map(c=>{
+    const title = c.querySelector("div[style*='font-weight']").textContent.trim();
+    const site = c.querySelector(".meta").textContent.replace(/\s+/g," ").trim();
+    const url = c.querySelector("a.link")?.href || "";
+    return title + " — " + site + " — " + url;
+  }).join("\n");
   try{
-    const data = [...resultsEl.querySelectorAll(".card")].map(c=>{
-      const title = c.querySelector("div[style*='font-weight']").textContent.trim();
-      const site = c.querySelector(".meta").textContent.replace(/\s+/g," ").trim();
-        const url = c.querySelector("a.link")?.href || "";
-        return title + " — " + site + " — " + url;
-      }).join("\n");
-    await navigator.clipboard.writeText(data);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(data);
+    }else{
+      const ta = document.createElement("textarea");
+      ta.value = data;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
     setStatus("copied"); setTimeout(()=>setStatus("idle"),800);
-  }catch{ setStatus("copy failed"); setTimeout(()=>setStatus("idle"),1200); }
+  }catch{
+    setStatus("copy failed"); setTimeout(()=>setStatus("idle"),1200);
+  }
 });
 goBtn.addEventListener("click", async ()=>{
   const u = buildUrl();
