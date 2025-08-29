@@ -10,6 +10,39 @@ const ASSETS_TO_CACHE = [
   '/manifest.json'
 ];
 
+// Web Manifest JSON definition
+const MANIFEST_JSON = JSON.stringify({
+  "name": "Jack Portal",
+  "short_name": "Jack",
+  "description": "Advanced content search interface",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Search",
+      "url": "/?fresh=true",
+      "description": "Start a new search"
+    }
+  ],
+  "categories": ["utilities", "productivity"]
+});
+
 // Install event - cache core assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
