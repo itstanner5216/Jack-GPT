@@ -1275,6 +1275,7 @@ const PORTAL_HTML = `<!DOCTYPE html>
 <main>
   <div class="panel">
     <h2 class="title">Search</h2>
+    <div id="error-container" class="error-message" aria-live="assertive" role="alert"></div>
     <div class="row">
       <div>
         <label>Query</label>
