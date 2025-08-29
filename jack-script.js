@@ -1,5 +1,6 @@
 // @ts-nocheck
 // Jack All-in-One — UI + /aggregate API + PWA // --------------- Service Worker Code (served when /sw.js is requested) ---------------
+// --------------- Service Worker Code (served when /sw.js is requested) ---------------
 const SW_JS = `// Jack-GPT Service Worker v1.0.0
 const CACHE_NAME = 'jack-portal-v1';
 const ASSETS_TO_CACHE = [
