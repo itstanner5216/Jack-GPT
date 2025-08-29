@@ -76,6 +76,23 @@ self.addEventListener('fetch', (event) => {
 
 const BASE_PATH = "/";
 
+// API documentation
+if (path === "/api/docs") {
+  return serveApiDocs();
+}
+
+// Health check endpoint
+if (path === "/health") {
+  return new Response(JSON.stringify({ 
+    status: 'healthy',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+}
+
 // ----------------------------- Router (entry) -----------------------------
 export default {
   async fetch(request, env, ctx) {
