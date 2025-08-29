@@ -1444,6 +1444,64 @@ const PORTAL_HTML = `<!DOCTYPE html>
   <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
   <!-- Existing styles remain unchanged -->
   <style>
+  /* Add inside the existing <style> tag */
+.search-indicators {
+  margin-top: 15px;
+  padding: 12px;
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  border: 1px solid #1f2024;
+  display: none;
+}
+.progress {
+  height: 4px;
+  width: 100%;
+  background: var(--panel-2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.chip {
+  display: inline-block;
+  padding: 4px 10px;
+  background: var(--panel-2);
+  border-radius: 16px;
+  margin: 0 6px 6px 0;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.chip:hover {
+  background: var(--panel-3);
+}
+.recent-searches {
+  margin-top: 15px;
+  display: none;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.error-message {
+  color: var(--bad);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+  font-size: 14px;
+  display: none;
+}
+.error-message.show {
+  display: block;
+}
     /* Your existing styles */
   </style>
 </head>
