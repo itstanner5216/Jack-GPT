@@ -105,14 +105,14 @@ export default {
 
     // Service worker
 if (path === joinPath(BASE_PATH, "sw.js")) {
-  return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/sw.js", {
+  return new Response(SW_JS, {
+    status: 200,
     headers: {
       "content-type": "application/javascript; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store"  // Ensure we always get the latest version
     }
   });
 }
-
     // API on same origin
     if (path === "/aggregate") {
       return handleAggregate(request, env, ctx);
