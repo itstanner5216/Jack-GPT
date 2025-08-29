@@ -1362,100 +1362,23 @@ const PORTAL_HTML = `<!DOCTYPE html>
   .debug{white-space:pre-wrap;background:#0f1115;border:1px solid #23262d;padding:10px;border-radius:10px;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px;display:none}
   .debug.show{display:block}
 </style>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Jack Portal</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="description" content="Advanced content search interface">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
+  <!-- Existing styles remain unchanged -->
+  <style>
+    /* Your existing styles */
+  </style>
 </head>
-<body>
-<header><h1>Jack Portal</h1></header>
-<main>
-  <div class="panel">
-    <h2 class="title">Search</h2>
-    <div id="error-container" class="error-message" aria-live="assertive" role="alert"></div>
-    <div class="row">
-      <div>
-        <label>Query</label>
-        <input id="q" type="text" placeholder="Type a query" />
-        <div class="muted" style="margin-top:6px">Duration accepts 5–12m, &lt;3m, &gt;10m, 7:30, PT1H5M</div>
-      </div>
-      <div>
-        <label>Mode</label>
-        <select id="modeSel">
-          <option value="niche">niche</option>
-          <option value="keywords">keywords</option>
-          <option value="deep_niche">deep_niche</option>
-          <option value="forums">forums</option>
-          <option value="tumblrish">tumblrish</option>
-        </select>
-        <div class="chips" id="modeChips">
-          <div class="chip active" data-mode="niche">niche</div>
-          <div class="chip" data-mode="keywords">keywords</div>
-          <div class="chip" data-mode="deep_niche">deep_niche</div>
-          <div class="chip" data-mode="forums">forums</div>
-          <div class="chip" data-mode="tumblrish">tumblrish</div>
-        </div>
-      </div>
-    </div>
-    <div class="row-2" style="margin-top:12px">
-      <div>
-        <label>Freshness</label>
-        <select id="freshSel">
-          <option value="d7">7 days</option>
-          <option value="m1">1 month</option>
-          <option value="m3">3 months</option>
-          <option value="y1">1 year</option>
-          <option value="all" selected>All time</option>
-        </select>
-      </div>
-      <div>
-        <label>Limit</label>
-        <input id="limit" type="number" value="20" min="3" max="20" />
-      </div>
-    </div>
-    <div class="row-2" style="margin-top:12px">
-      <div>
-        <label>Duration</label>
-        <input id="duration" type="text" placeholder="e.g. 3–8m or PT5M" />
-      </div>
-      <div>
-        <label>Site (optional)</label>
-        <input id="site" type="text" placeholder="example.com" />
-      </div>
-    </div>
-    <div class="row-2" style="margin-top:12px">
-      <div>
-        <label>Host Mode</label>
-        <select id="hostModeSel">
-          <option value="normal">normal</option>
-          <option value="relaxed">relaxed</option>
-        </select>
-      </div>
-      <div>
-        <label>Duration Mode</label>
-        <select id="durationModeSel">
-          <option value="normal">normal</option>
-          <option value="lenient">lenient</option>
-        </select>
-      </div>
-    </div>
-    <div class="progress" id="search-progress">
-  <div class="progress-bar" id="progress-bar"></div>
-</div>
-    <div class="actions">
-      <button id="goBtn">Search</button>
-      <button class="secondary" id="copyBtn" type="button">Copy results</button>
-      <button class="ghost" id="dbgBtn" type="button">Toggle debug</button>
-      <button class="secondary" id="saveBtn" type="button">Save defaults</button>
-      <button class="ghost" id="resetBtn" type="button">Reset</button>
-    </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
-      <input type="checkbox" id="showThumbs" checked /> <span class="muted">Show thumbnails (uses item.thumbnail if provided)</span>
-    </label>
-    <div class="muted" style="margin-top:12px">
-      Modes map directly to the API; Freshness supports d7/m1/m3/y1/all (all = no time limit).
-    </div>
-  </div>
-  <div id="results" class="grid" aria-live="polite" style="margin-top:16px"></div>
-  <div id="debug" class="debug" style="margin-top:16px"></div>
-  <div class="status" id="status">idle</div>
-</main>
 <script>
 // Register service worker for offline capability and PWA support
 if ('serviceWorker' in navigator) {
