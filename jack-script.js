@@ -419,6 +419,313 @@ async function handleAggregate(request, env, ctx) {
     finalQ = finalQ.replace(/\s+/g, " ").trim();
     if (finalQ.length > 1700) finalQ = finalQ.slice(0, 1700);
 
+    // API documentation endpoint handler
+function serveApiDocs() {
+  return new Response(`<!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jack-GPT API Documentation</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --text: #333333;
+        --border: #e0e0e0;
+        --code-bg: #f5f7f9;
+        --primary: #3b82f6;
+        --secondary: #64748b;
+        --radius: 6px;
+      }
+      
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #121212;
+          --text: #e0e0e0;
+          --border: #2a2a2a;
+          --code-bg: #1e1e1e;
+          --primary: #60a5fa;
+          --secondary: #94a3b8;
+        }
+      }
+      
+      * { box-sizing: border-box; }
+      
+      body { 
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif; 
+        line-height: 1.6; 
+        max-width: 1000px; 
+        margin: 0 auto; 
+        padding: 20px;
+        color: var(--text);
+        background: var(--bg);
+      }
+      
+      h1 { 
+        border-bottom: 1px solid var(--border); 
+        padding-bottom: 10px; 
+        font-size: 2rem;
+        margin-top: 0;
+      }
+      
+      h2 { 
+        margin-top: 2rem; 
+        font-size: 1.5rem;
+        padding-bottom: 5px;
+        border-bottom: 1px solid var(--border);
+      }
+      
+      h3 { 
+        margin-top: 1.5rem; 
+        font-size: 1.2rem;
+        color: var(--primary);
+      }
+      
+      code { 
+        background: var(--code-bg); 
+        padding: 2px 5px; 
+        border-radius: 3px; 
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 0.9em;
+      }
+      
+      pre { 
+        background: var(--code-bg); 
+        padding: 15px; 
+        border-radius: var(--radius); 
+        overflow-x: auto;
+        border: 1px solid var(--border);
+      }
+      
+      pre code {
+        background: transparent;
+        padding: 0;
+      }
+      
+      table { 
+        border-collapse: collapse; 
+        width: 100%; 
+        margin: 20px 0;
+      }
+      
+      th, td { 
+        border: 1px solid var(--border); 
+        padding: 10px 15px; 
+        text-align: left; 
+      }
+      
+      th { 
+        background: var(--code-bg);
+        font-weight: 600;
+      }
+      
+      a {
+        color: var(--primary);
+        text-decoration: none;
+      }
+      
+      a:hover {
+        text-decoration: underline;
+      }
+      
+      .endpoint {
+        background: var(--code-bg);
+        padding: 10px 15px;
+        border-radius: var(--radius);
+        border-left: 4px solid var(--primary);
+        margin: 15px 0;
+        font-weight: 600;
+      }
+      
+      .method {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: var(--primary);
+        color: white;
+        font-size: 0.8rem;
+        margin-right: 8px;
+      }
+      
+      .version-info {
+        text-align: right;
+        font-size: 0.8rem;
+        color: var(--secondary);
+        margin-top: 2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Jack-GPT API Documentation</h1>
+    <p>
+      Jack-GPT provides powerful content search capabilities through a RESTful API. 
+      This documentation outlines available endpoints, parameters, and expected responses.
+    </p>
+    
+    <h2>Aggregate Search API</h2>
+    <p>The primary endpoint for performing content searches with advanced filtering capabilities.</p>
+    
+    <div class="endpoint">
+      <span class="method">GET</span> /aggregate
+    </div>
+    
+    <h3>Query Parameters</h3>
+    <table>
+      <tr>
+        <th>Parameter</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Required</th>
+        <th>Default</th>
+      </tr>
+      <tr>
+        <td><code>q</code></td>
+        <td>string</td>
+        <td>Search query text</td>
+        <td>Yes</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code>mode</code></td>
+        <td>string</td>
+        <td>Search mode: <code>niche</code>, <code>keywords</code>, <code>deep_niche</code>, <code>forums</code>, <code>tumblrish</code></td>
+        <td>No</td>
+        <td><code>niche</code></td>
+      </tr>
+      <tr>
+        <td><code>fresh</code></td>
+        <td>string</td>
+        <td>Freshness filter: <code>d7</code> (7 days), <code>m1</code> (1 month), <code>m3</code> (3 months), <code>y1</code> (1 year), <code>all</code> (all time)</td>
+        <td>No</td>
+        <td><code>y1</code></td>
+      </tr>
+      <tr>
+        <td><code>limit</code></td>
+        <td>integer</td>
+        <td>Maximum number of results (3-20)</td>
+        <td>No</td>
+        <td>10</td>
+      </tr>
+      <tr>
+        <td><code>duration</code></td>
+        <td>string</td>
+        <td>Duration filter (e.g., <code>5-12m</code>, <code>&lt;3m</code>, <code>&gt;10m</code>, <code>7:30</code>, <code>PT1H5M</code>)</td>
+        <td>No</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code>site</code></td>
+        <td>string</td>
+        <td>Limit results to specific domain</td>
+        <td>No</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code>hostMode</code></td>
+        <td>string</td>
+        <td><code>normal</code> or <code>relaxed</code></td>
+        <td>No</td>
+        <td><code>normal</code></td>
+      </tr>
+      <tr>
+        <td><code>durationMode</code></td>
+        <td>string</td>
+        <td><code>normal</code> or <code>lenient</code></td>
+        <td>No</td>
+        <td><code>normal</code></td>
+      </tr>
+      <tr>
+        <td><code>nocache</code></td>
+        <td>boolean</td>
+        <td>Set to <code>1</code> to bypass cache</td>
+        <td>No</td>
+        <td>—</td>
+      </tr>
+    </table>
+    
+    <h3>Example Request</h3>
+    <pre><code>GET /aggregate?q=example+search&mode=niche&fresh=m1&limit=10</code></pre>
+    
+    <h3>Example Response</h3>
+    <pre><code>{
+  "query": "example search",
+  "site": null,
+  "mode": "niche",
+  "durationQuery": null,
+  "freshness": "m1",
+  "results": [
+    {
+      "title": "Example Content",
+      "site": "example.com",
+      "url": "https://example.com/video/12345",
+      "runtime": "5:30",
+      "thumbnail": "https://example.com/thumb/12345.jpg",
+      "tags": ["tag1", "tag2"],
+      "notes": "search result"
+    }
+  ]
+}</code></pre>
+
+    <h3>Error Responses</h3>
+    
+    <h4>Missing Query</h4>
+    <pre><code>{
+  "error": "missing query",
+  "status": 400
+}</code></pre>
+
+    <h4>Invalid Parameters</h4>
+    <pre><code>{
+  "error": "invalid parameter: limit must be between 3 and 20",
+  "status": 400
+}</code></pre>
+
+    <h4>Server Error</h4>
+    <pre><code>{
+  "error": "an unexpected error occurred",
+  "requestId": "7f28c64a-9b2a-4b69-b7f1-8d94a4abf4e3",
+  "status": 500
+}</code></pre>
+    
+    <h2>Health Check API</h2>
+    <p>Endpoint for monitoring the service health status.</p>
+    
+    <div class="endpoint">
+      <span class="method">GET</span> /health
+    </div>
+    
+    <h3>Example Response</h3>
+    <pre><code>{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": "2025-08-29T00:15:22Z"
+}</code></pre>
+
+    <h2>Usage Limits</h2>
+    <p>
+      The API currently does not implement strict rate limiting, but excessive usage may be restricted.
+      For high-volume applications, please implement reasonable request throttling.
+    </p>
+    
+    <h2>Caching Behavior</h2>
+    <p>
+      Results are cached for 1 hour by default to improve performance and reduce load.
+      Use the <code>nocache=1</code> parameter to bypass the cache for time-sensitive queries.
+    </p>
+    
+    <div class="version-info">
+      <p>API Version: 1.0.0 | Last Updated: August 2025</p>
+    </div>
+  </body>
+  </html>`, {
+    status: 200,
+    headers: { 
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=3600"
+    }
+  });
+}
+
     const out = [];
     for (const start of pages) {
       const u = new URL("https://www.googleapis.com/customsearch/v1");
