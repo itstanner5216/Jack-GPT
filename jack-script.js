@@ -42,6 +42,45 @@ const MANIFEST_JSON = JSON.stringify({
   ],
   "categories": ["utilities", "productivity"]
 });
+// ------------ Search enhancement utilities ------------
+const DEBOUNCE_DELAY = 300; // ms
+const THROTTLE_DELAY = 500; // ms
+
+// Debounce utility for search operations
+function debounce(fn, delay) {
+  let timer = null;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn.apply(this, args);
+    }, delay);
+  };
+}
+
+// Throttle utility for high-frequency events
+function throttle(fn, limit) {
+  let inThrottle;
+  return function(...args) {
+    if (!inThrottle) {
+      fn.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  };
+}
+
+// Input validation for search queries
+function validateQuery(query, limit) {
+  if (!query || query.trim().length < 2) {
+    return "Please enter a valid search query (at least 2 characters)";
+  }
+  
+  if (limit && (isNaN(limit) || limit < 3 || limit > 20)) {
+    return "Result limit must be between 3 and 20";
+  }
+  
+  return null;
+}
 
 // Install event - cache core assets
 self.addEventListener('install', (event) => {
