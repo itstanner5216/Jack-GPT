@@ -106,6 +106,16 @@ self.addEventListener('fetch', (event) => {
 //     }
 //   });
 // }
+// Manifest (support both paths for compatibility)
+if (path === joinPath(BASE_PATH, "site.webmanifest") || path === "/manifest.json") {
+  return new Response(MANIFEST_JSON, {
+    status: 200,
+    headers: {
+      "content-type": "application/manifest+json; charset=utf-8",
+      "cache-control": "public, max-age=3600"
+    }
+  });
+}
 
 const BASE_PATH = "/";
 
