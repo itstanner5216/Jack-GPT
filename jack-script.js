@@ -1651,6 +1651,40 @@ searchForm.addEventListener("submit", (e) => {
       goBtn.disabled = false;
       completeProgress(progressInterval);
     }
+    // PWA installation support
+let deferredPrompt;
+const installButton = document.createElement('button');
+installButton.textContent = 'Install App';
+installButton.classList.add('secondary');
+installButton.style.display = 'none';
+document.querySelector('.actions').appendChild(installButton);
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent Chrome 76+ from automatically showing the prompt
+  e.preventDefault();
+  // Stash the event so it can be triggered later
+  deferredPrompt = e;
+  // Update UI to notify the user they can add to home screen
+  installButton.style.display = 'block';
+});
+
+installButton.addEventListener('click', async () => {
+  // Hide our user interface that shows our install button
+  installButton.style.display = 'none';
+  // Show the install prompt
+  deferredPrompt.prompt();
+  // Wait for the user to respond to the prompt
+  const { outcome } = await deferredPrompt.userChoice;
+  console.log(`User response to the install prompt: ${outcome}`);
+  // We've used the prompt, and can't use it again, so throw it away
+  deferredPrompt = null;
+});
+
+window.addEventListener('appinstalled', () => {
+  // Log install to analytics
+  console.log('PWA was installed');
+  installButton.style.display = 'none';
+});
   }, DEBOUNCE_DELAY);
 });
 loadDefaults();
