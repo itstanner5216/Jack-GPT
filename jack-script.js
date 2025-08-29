@@ -476,7 +476,43 @@ async function handleAggregate(request, env, ctx) {
     finalQ = finalQ.replace(/\s+/g, " ").trim();
     if (finalQ.length > 1700) finalQ = finalQ.slice(0, 1700);
 
-    // API documentation endpoint handler
+    // Handle the aggregate endpoint
+async function handleAggregate(request, env, ctx) {
+  try {
+    const url = new URL(request.url);
+    const params = url.searchParams;
+    
+    // Validate required parameters
+    const query = params.get("q");
+    if (!query || !query.trim()) {
+      return new Response(JSON.stringify({
+        error: "missing query",
+        status: 400
+      }), {
+        status: 400,
+        headers: { 
+          "content-type": "application/json",
+          "access-control-allow-origin": "*"
+        }
+      });
+    }
+    
+    // Validate numeric parameters
+    const limit = parseInt(params.get("limit") || "10", 10);
+    if (isNaN(limit) || limit < 3 || limit > 20) {
+      return new Response(JSON.stringify({
+        error: "invalid parameter: limit must be between 3 and 20",
+        status: 400
+      }), {
+        status: 400,
+        headers: { 
+          "content-type": "application/json",
+          "access-control-allow-origin": "*"
+        }
+      });
+    }
+    
+    // Continue with existing implementation...
 function serveApiDocs() {
   return new Response(`<!DOCTYPE html>
   <html lang="en">
