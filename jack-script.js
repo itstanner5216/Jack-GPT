@@ -1342,6 +1342,9 @@ const PORTAL_HTML = `<!DOCTYPE html>
         </select>
       </div>
     </div>
+    <div class="progress" id="search-progress">
+  <div class="progress-bar" id="progress-bar"></div>
+</div>
     <div class="actions">
       <button id="goBtn">Search</button>
       <button class="secondary" id="copyBtn" type="button">Copy results</button>
