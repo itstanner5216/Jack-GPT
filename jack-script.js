@@ -96,8 +96,30 @@ if (path === "/health") {
 // ----------------------------- Router (entry) -----------------------------
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+    try {
+      // Existing code will go here
+      const url = new URL(request.url);
+      const path = url.pathname;
+      
+      // Rest of your routing logic...
+    } catch (error) {
+      // Global error handler for unhandled exceptions
+      console.error(`[Jack-GPT] Unhandled error: ${error.message}`, error.stack);
+      return new Response(JSON.stringify({
+        error: 'An unexpected error occurred',
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString()
+      }), {
+        status: 500,
+        headers: {
+          'content-type': 'application/json',
+          'access-control-allow-origin': '*',
+          'cache-control': 'no-store'
+        }
+      });
+    }
+  }
+};
 
     // Root UI
     if (path === BASE_PATH || (BASE_PATH !== "/" && path === BASE_PATH.replace(/\/$/, ""))) {
