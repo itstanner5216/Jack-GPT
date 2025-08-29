@@ -1563,32 +1563,50 @@ copyBtn.addEventListener("click", async ()=>{
     setStatus("copy failed"); setTimeout(()=>setStatus("idle"),1200);
   }
 });
-goBtn.addEventListener("click", async () => {
-  const u = buildUrl();
-  if (!qEl.value.trim()) {
-    setStatus("enter a query");
-    return;
+// Search form submission with debouncing
+searchForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
   }
-  setStatus("loading…");
-  resultsEl.innerHTML = "";
-  debugEl.textContent = "";
-  try {
-    const r = await fetch(u, { cache: "no-store" });
-    if (!r.ok) {
-      const t = await r.text();
-      debugEl.textContent = 'HTTP ' + r.status + ' — ' + t;
-      setStatus('error');
+  
+  searchTimeout = setTimeout(async () => {
+    const query = qEl.value.trim();
+    if (!query) {
+      showError("Please enter a search query");
+      setStatus("enter a query");
       return;
     }
-    const data = await r.json();
-    render(data.results || []);
-    debugEl.textContent = JSON.stringify(data.diag || data, null, 2);
-    setStatus('done (' + ((data.results || []).length) + ')');
-  } catch (e) {
-    setStatus("error");
-    debugEl.textContent = String(e);
-// ...
-  }
+    
+    // Clear previous results and error messages
+    clearError();
+    goBtn.disabled = true;
+    setStatus("loading…");
+    resultsEl.innerHTML = "";
+    debugEl.textContent = "";
+    
+    // Show progress indicator
+    const progressInterval = startProgress();
+    
+    try {
+      const response = await fetchWithRetry(buildUrl());
+      const data = await response.json();
+      
+      render(data.results || []);
+      if (data.diag) {
+        debugEl.textContent = JSON.stringify(data.diag, null, 2);
+      }
+      setStatus('done (' + ((data.results || []).length) + ')');
+    } catch (error) {
+      showError(error.message || "Search failed");
+      setStatus("error");
+      debugEl.textContent = String(error);
+    } finally {
+      goBtn.disabled = false;
+      completeProgress(progressInterval);
+    }
+  }, DEBOUNCE_DELAY);
 });
 loadDefaults();
 </script>
