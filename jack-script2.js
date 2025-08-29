@@ -257,6 +257,47 @@ const LINK_EXTRACTION_CONFIG = {
   enabledContentTypes: ['video', 'audio', 'image', 'article']
 };
 
+// CORS Configuration
+const CORS_CONFIG = {
+  allowOrigin: "*",
+  allowMethods: "GET, POST, OPTIONS",
+  allowHeaders: "Content-Type, Authorization, X-Requested-With",
+  maxAge: "86400", // Cache preflight results for 24 hours
+  allowCredentials: false // Set to true if you need to support credentials
+};
+
+// Helper function to add proper CORS headers to responses
+function addCorsHeaders(response, options = {}) {
+  const headers = response.headers;
+  
+  // Use default CORS config with any overrides
+  const config = { ...CORS_CONFIG, ...options };
+  
+  // Add standard CORS headers
+  headers.set("access-control-allow-origin", config.allowOrigin);
+  headers.set("access-control-allow-methods", config.allowMethods);
+  headers.set("access-control-allow-headers", config.allowHeaders);
+  
+  // Add cache duration for preflight requests
+  if (config.maxAge) {
+    headers.set("access-control-max-age", config.maxAge);
+  }
+  
+  // Allow credentials if specified
+  if (config.allowCredentials) {
+    headers.set("access-control-allow-credentials", "true");
+  }
+  
+  // Add Vary header for proper caching behavior when origin varies
+  if (config.allowOrigin !== "*") {
+    headers.set("vary", headers.get("vary") 
+      ? headers.get("vary") + ", Origin" 
+      : "Origin");
+  }
+  
+  return response;
+}
+
 // ---------------- Utility Functions ----------------
 
 // Helper functions
@@ -948,6 +989,15 @@ function serveApiDocs() {
       For high-volume applications, please implement reasonable request throttling.
     </p>
     
+    <h2>CORS Support</h2>
+    <p>
+      All API endpoints support Cross-Origin Resource Sharing (CORS) with the following headers:
+    </p>
+    <pre><code>Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With
+Access-Control-Max-Age: 86400</code></pre>
+    
     <h2>Caching Behavior</h2>
     <p>
       Results are cached for 1 hour by default to improve performance and reduce load.
@@ -991,6 +1041,7 @@ const ADMIN_PANEL_HTML = `<!DOCTYPE html>
       --radius: 8px;
       --transition: all 0.2s ease;
     }
+    
     html, body {
       background: var(--bg);
       color: var(--text);
@@ -1621,7 +1672,7 @@ const ADMIN_PANEL_HTML = `<!DOCTYPE html>
                       <option value="site">Site Specific</option>
                       <option value="meta">Metadata</option>
                     </select>
-                  </div>
+                                    </div>
                 </div>
                 
                 <div class="actions">
@@ -2688,9 +2739,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
   <meta name="theme-color" content="#0b0b0c">
   <meta name="description" content="Advanced content search interface">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="apple-touch-icon" sizes="
-
-  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
   <style>
@@ -3298,6 +3346,24 @@ const PORTAL_HTML = `<!DOCTYPE html>
       }
     }
     
+    /* Skip to content for accessibility */
+    .skip-link {
+          /* Skip to content for accessibility */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--accent);
+      color: white;
+      padding: 8px;
+      z-index: 100;
+      transition: top 0.3s;
+    }
+    
+    .skip-link:focus {
+      top: 0;
+    }
+    
     /* Print styles */
     @media print {
       body {
@@ -3326,6 +3392,7 @@ const PORTAL_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body>
+  <a href="#results" class="skip-link">Skip to content</a>
   <div class="container">
     <h2 class="title">Jack Portal</h2>
     
@@ -3595,6 +3662,7 @@ const PORTAL_HTML = `<!DOCTYPE html>
     const clearRecentSearches = document.getElementById('clear-recent-searches');
     const resetPreferences = document.getElementById('reset-preferences');
     const toastContainer = document.getElementById('toast-container');
+    const errorContainer = document.getElementById('error-container');
     
     // Global state
     let searchTimeout = null;
@@ -3619,15 +3687,19 @@ const PORTAL_HTML = `<!DOCTYPE html>
       toastContainer.appendChild(toast);
       
       // Automatically remove after duration
-      setTimeout(() => {
-        toast.classList.add('hiding');
-        // Remove from DOM after animation completes
+      if (duration > 0) {
         setTimeout(() => {
-          if (toastContainer.contains(toast)) {
-            toastContainer.removeChild(toast);
-          }
-        }, 300);
-      }, duration);
+          toast.classList.add('hiding');
+          // Remove from DOM after animation completes
+          setTimeout(() => {
+            if (toastContainer.contains(toast)) {
+              toastContainer.removeChild(toast);
+            }
+          }, 300);
+        }, duration);
+      }
+      
+      return toast;
     }
     
     // Function to set status text
@@ -3645,204 +3717,13 @@ const PORTAL_HTML = `<!DOCTYPE html>
     
     // Show/hide error messages
     function showError(message) {
-      const errorContainer = document.getElementById('error-container');
       errorContainer.textContent = message;
       errorContainer.classList.add('show');
     }
     
     function clearError() {
-      const errorContainer = document.getElementById('error-container');
       errorContainer.textContent = '';
       errorContainer.classList.remove('show');
-    }
-    
-    // Enhanced optimized link extraction logic
-    function extractUsableLinks(results, customSources = []) {
-      if (!results || !Array.isArray(results)) return [];
-      
-      // Get filter configuration for content filtering
-      const filterConfig = loadFilterConfig();
-      
-      // Combine trusted domains from customSources with default ones
-      const trustedDomains = [
-        'homotube.com',
-        'gaymaletube.com',
-        'boyfriendtv.com',
-        'manporn.xxx',
-        'pornmd.com',
-        'gaytube.com',
-        'gaysexvideos.tv',
-        'hellomorningstarrs.com',
-        'onlydudes.tv',
-        'redgay.net',
-        'eporner.com',
-        'gayforfans.com',
-        'youngsfun.com',
-        'redtube.com',
-        'gotgayporn.com',
-        'tubegalore.com',
-        'manhub.com',
-        'txxx.com',
-        ...customSources.map(source => source.domain)
-      ];
-      
-      // Create domain priority map based on source configuration
-      const domainPriorityMap = new Map();
-      customSources.forEach(source => {
-        let priorityValue = 1;
-        if (source.priority === 'high') priorityValue = 3;
-        else if (source.priority === 'normal') priorityValue = 2;
-        domainPriorityMap.set(source.domain, priorityValue);
-      });
-      
-      // Get positive and negative terms for content filtering
-      const positiveTerms = filterConfig.positiveTerms
-        .filter(term => term.enabled)
-        .map(term => term.term.toLowerCase());
-        
-      const negativeTerms = filterConfig.negativeTerms
-        .filter(term => term.enabled)
-        .map(term => term.term.toLowerCase());
-      
-      // Enhanced link extraction with confidence scoring
-      const enhancedResults = results.map(result => {
-        // Original result
-        const original = { ...result };
-        
-        // Confidence scoring for link quality
-        let confidenceScore = 0;
-        
-        // Extract domain from URL
-        const domain = extractDomain(result.site || result.url || '');
-        
-        // Check if URL is from trusted domain
-        const isTrustedDomain = trustedDomains.some(td => domain.includes(td));
-        if (isTrustedDomain) confidenceScore += 0.5;
-        
-        // Check if URL appears valid (basic validation)
-        const hasValidUrl = result.url && /^https?:\/\/.+/.test(result.url);
-        if (hasValidUrl) confidenceScore += 0.3;
-        
-        // Check if content has necessary metadata
-        const hasMetadata = result.title && result.thumbnail;
-        if (hasMetadata) confidenceScore += 0.2;
-        
-        // Combined text for content analysis
-        const title = (result.title || '').toLowerCase();
-        const snippet = (result.snippet || '').toLowerCase();
-        const combinedText = `${title} ${snippet}`;
-        
-        // Boost confidence for sites with explicit gay male content
-        if (domain.includes('gay') || domain.includes('male') || domain.includes('homo')) {
-          confidenceScore += 0.3;
-        }
-
-        // Check URL for relevance indicators
-        if (result.url && (
-          result.url.includes('/gay/') || 
-          result.url.includes('/male/') || 
-          result.url.includes('/men/')
-        )) {
-          confidenceScore += 0.2;
-        }
-
-        // Check title for relevance based on positive terms
-        const hasPositiveTerms = positiveTerms.some(term => combinedText.includes(term));
-        if (hasPositiveTerms) {
-          confidenceScore += 0.3;
-        }
-
-        // Check title for negative terms
-        const hasNegativeTerms = negativeTerms.some(term => combinedText.includes(term));
-        if (hasNegativeTerms) {
-          confidenceScore -= 0.5;
-        }
-        
-        // Apply custom source priority boost
-        if (isTrustedDomain && domainPriorityMap.has(domain)) {
-          confidenceScore += (domainPriorityMap.get(domain) * 0.1);
-        }
-        
-        // Apply link optimization filters if meets confidence threshold
-        if (confidenceScore >= LINK_EXTRACTION_CONFIG.minConfidence) {
-          // URL cleanup and normalization
-          let url = result.url;
-          
-          // Fix common URL issues
-          if (url && !url.startsWith('http')) {
-            url = 'https://' + url;
-          }
-          
-          // Remove tracking parameters
-          try {
-            const urlObj = new URL(url);
-            ['utm_source', 'utm_medium', 'utm_campaign', 'ref', 'source', 'fbclid', 'gclid'].forEach(param => {
-              urlObj.searchParams.delete(param);
-            });
-            url = urlObj.toString();
-          } catch (e) {
-            // URL parsing failed, use original
-          }
-          
-          // Update the result with optimized URL
-          result.url = url;
-          
-          // Extract tags if not already present
-          if (!result.tags || result.tags.length === 0) {
-            const tags = [];
-            const categoryKeywords = ['amateur', 'hardcore', 'twink', 'bear', 'daddy', 'jock', 'muscle', 'bareback', 'group', 'solo'];
-            
-            // Look for category keywords in text
-            categoryKeywords.forEach(keyword => {
-              if (combinedText.includes(keyword) && !tags.includes(keyword)) {
-                tags.push(keyword);
-              }
-            });
-            
-            // Add positive terms that match as tags
-            positiveTerms.forEach(term => {
-              if (combinedText.includes(term) && !tags.includes(term) && tags.length < 5) {
-                tags.push(term);
-              }
-            });
-            
-            if (tags.length > 0) {
-              result.tags = tags.slice(0, 5); // Limit to 5 tags
-            }
-          }
-          
-          // Add confidence metadata for debugging
-          result._confidence = confidenceScore;
-          result._optimized = true;
-          
-          return result;
-        }
-        
-        // If confidence is too low, return original result with a flag
-        original._lowConfidence = true;
-        original._confidence = confidenceScore;
-        return original;
-      });
-      
-      // Sort by confidence score if setting enabled
-      if (filterConfig.settings?.prioritizeCustomSources) {
-        enhancedResults.sort((a, b) => {
-          // First sort by trusted domains
-          const domainA = extractDomain(a.site || a.url || '');
-          const domainB = extractDomain(b.site || b.url || '');
-          
-          const isTrustedA = trustedDomains.some(td => domainA.includes(td));
-          const isTrustedB = trustedDomains.some(td => domainB.includes(td));
-          
-          if (isTrustedA && !isTrustedB) return -1;
-          if (!isTrustedA && isTrustedB) return 1;
-          
-          // If both trusted or both not trusted, sort by confidence
-          return (b._confidence || 0) - (a._confidence || 0);
-        });
-      }
-      
-      return enhancedResults;
     }
     
     // Render search results
@@ -4292,8 +4173,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
       
       // Execute search with debouncing
       searchTimeout = setTimeout(async () => {
-              // Execute search with debouncing
-      searchTimeout = setTimeout(async () => {
         try {
           // Perform search
           const result = await performSearch(query);
@@ -4334,7 +4213,218 @@ const PORTAL_HTML = `<!DOCTYPE html>
             // Update URL without page reload (for sharing/bookmarking)
             const searchParams = new URLSearchParams(window.location.search);
             searchParams.set('q', query);
-            searchParams.set('mode', modeEl.value);
+                          const match = result.link.match(/^(?:https?:\/\/)?(?:www\.)?([^\/]+)/i);
+              domain = match ? match[1] : '';
+            }
+            
+            // Extract video duration if available
+            let runtime = null;
+            const durationMatches = [
+              // Look for timestamps
+              result.title.match(/(\d+:\d+(?::\d+)?)/),
+              result.snippet?.match(/(\d+:\d+(?::\d+)?)/),
+              // Look for duration mentions
+              result.title.match(/(\d+)\s*min/i),
+              result.snippet?.match(/(\d+)\s*min/i),
+              // Look for length mentions
+              result.title.match(/length[:\s]+(\d+[\s:]*\d*)/i),
+              result.snippet?.match(/length[:\s]+(\d+[\s:]*\d*)/i),
+              // Look for duration mentions
+              result.title.match(/duration[:\s]+(\d+[\s:]*\d*)/i),
+              result.snippet?.match(/duration[:\s]+(\d+[\s:]*\d*)/i)
+            ].find(m => m);
+            
+            if (durationMatches) {
+              runtime = durationMatches[1];
+            }
+            
+            // Extract potential tags
+            const tags = [];
+            
+            // Look for hashtags
+            const hashtagMatches = (result.title + ' ' + (result.snippet || '')).match(/#([a-zA-Z0-9_]+)/g);
+            if (hashtagMatches) {
+              hashtagMatches.forEach(tag => {
+                tags.push(tag.substring(1));
+              });
+            }
+            
+            // Look for common porn categories
+            const categoryKeywords = ['amateur', 'hardcore', 'twink', 'bear', 'daddy', 'jock', 'muscle', 'bareback', 'group', 'solo'];
+            categoryKeywords.forEach(keyword => {
+              if ((result.title + ' ' + (result.snippet || '')).toLowerCase().includes(keyword)) {
+                if (!tags.includes(keyword)) {
+                  tags.push(keyword);
+                }
+              }
+            });
+            
+            // Get thumbnail URL
+            let thumbnail = null;
+            if (result.thumbnailUrl) {
+              thumbnail = result.thumbnailUrl;
+            } else if (result.imageUrl) {
+              thumbnail = result.imageUrl;
+            }
+            
+            return {
+              title: result.title,
+              site: domain,
+              url: result.link,
+              runtime: runtime,
+              thumbnail: thumbnail,
+              tags: tags.slice(0, 5), // Limit to 5 tags max
+              notes: "search result",
+              snippet: result.snippet
+            };
+          });
+          
+          // Apply server-side content filtering before returning results
+          if (filterStrength !== 'none') {
+            const filterConfig = {
+              settings: {
+                filterStrength,
+                confidenceThreshold: 0.7,
+                requirePositiveMatch: false
+              },
+              // Default filter terms if custom filters are unavailable
+              negativeTerms: [
+                { term: 'lesbian', enabled: true, category: 'content' },
+                { term: 'female', enabled: true, category: 'content' },
+                { term: 'straight sex', enabled: true, category: 'content' },
+                { term: 'f/f', enabled: true, category: 'content' },
+                { term: 'woman', enabled: true, category: 'content' }
+              ],
+              positiveTerms: [
+                { term: 'gay male', enabled: true, category: 'content' },
+                { term: 'men only', enabled: true, category: 'content' },
+                { term: 'male gay', enabled: true, category: 'content' },
+                { term: 'm/m', enabled: true, category: 'content' }
+              ]
+            };
+            
+            results = applyContentFilters(results, filterConfig);
+          }
+          
+          // Prepare final response with enhanced metadata
+          const response = {
+            query,
+            site,
+            mode,
+            durationQuery: duration,
+            freshness: fresh,
+            results,
+            diag: {
+              mode,
+              hostMode,
+              durationMode,
+              fresh,
+              cached: cacheHit,
+              processTime: new Date().getTime(),
+              filterStrength,
+              requestId,
+              resultCount: results.length,
+              originalCount: organicResults.length
+            }
+          };
+          
+          // Enhance logging if analytics are available
+          if (env && env.JACK_ANALYTICS) {
+            const analyticsData = {
+              timestamp: new Date().toISOString(),
+              clientIP: clientIP,
+              query: searchQuery,
+              mode,
+              freshness: fresh,
+              resultCount: results.length,
+              originalCount: organicResults.length,
+              requestId
+            };
+            
+            // Don't await to avoid delaying response
+            env.JACK_ANALYTICS.put(`search:${requestId}`, JSON.stringify(analyticsData), {
+              expirationTtl: 604800 // 7 days
+            }).catch(error => {
+              console.error('Analytics error:', error);
+            });
+          }
+          
+          return addCorsHeaders(new Response(JSON.stringify(response), {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "cache-control": noCache ? "no-store" : "public, max-age=3600"
+            }
+          }));
+        } catch (error) {
+          console.error(`[handleAggregate] Error: ${error.message}`, error.stack);
+          return addCorsHeaders(new Response(JSON.stringify({
+            error: "an unexpected error occurred",
+            requestId: crypto.randomUUID(),
+            status: 500
+          }), {
+            status: 500,
+            headers: { "content-type": "application/json" }
+          }));
+        }
+      }
+      
+      // Main page
+      if (path === "/" || path === "/index.html") {
+        return addCorsHeaders(new Response(PORTAL_HTML, {
+          status: 200,
+          headers: { 
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "public, max-age=300" // 5 minute cache
+          }
+        }));
+      }
+      
+      // 404 Not Found for any other routes
+      return addCorsHeaders(new Response("Not found", {
+        status: 404,
+        headers: { "content-type": "text/plain" }
+      }));
+    } catch (error) {
+      // Global error handler for unhandled exceptions
+      console.error(`[Jack-GPT] Unhandled error: ${error.message}`, error.stack);
+      return addCorsHeaders(new Response(JSON.stringify({
+        error: 'An unexpected error occurred',
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString()
+      }), {
+        status: 500,
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'no-store'
+        }
+      }));
+    }
+  }
+};
+
+// -------------------- Deployment Guide --------------------
+
+/*
+# Jack-GPT Deployment Guide for Cloudflare Workers
+
+## Prerequisites
+1. Cloudflare account
+2. Wrangler CLI installed: `npm install -g wrangler`
+3. Node.js 14+ installed
+
+## Setup Steps
+
+### 1. Create a new Cloudflare Workers project
+
+```bash
+# Login to Cloudflare
+wrangler login
+
+# Create a new project
+mkdir jack-gpt
+cd jack-gpt
+wrangler init searchParams.set('mode', modeEl.value);
             searchParams.set('fresh', freshEl.value);
             const newUrl = `${window.location.pathname}?${searchParams.toString()}`;
             window.history.pushState({ query, mode: modeEl.value, fresh: freshEl.value }, '', newUrl);
@@ -4413,19 +4503,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
     
     // Keyboard navigation enhancements
     function setupKeyboardNavigation() {
-      // Skip to content link for keyboard users
-      const skipLink = document.createElement('a');
-      skipLink.href = '#results';
-      skipLink.textContent = 'Skip to content';
-      skipLink.className = 'skip-link visually-hidden';
-      skipLink.addEventListener('focus', function() {
-        this.classList.remove('visually-hidden');
-      });
-      skipLink.addEventListener('blur', function() {
-        this.classList.add('visually-hidden');
-      });
-      document.body.insertBefore(skipLink, document.body.firstChild);
-      
       // Enhanced focus management for results
       resultsEl.tabIndex = -1;
       
@@ -4443,6 +4520,11 @@ const PORTAL_HTML = `<!DOCTYPE html>
         // ESC to cancel search
         if (e.key === 'Escape' && currentSearchController) {
           cancelSearchBtn.click();
+        }
+        
+        // ESC to close modals
+        if (e.key === 'Escape' && preferencesModal.classList.contains('show')) {
+          cancelPreferences.click();
         }
       });
     }
@@ -4615,63 +4697,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
       });
     }
     
-    // Performance monitoring
-    function setupPerformanceMonitoring() {
-      // Only run in debug mode or for admin users
-      let isAdmin = false;
-      try {
-        isAdmin = validateAdminSession();
-      } catch (e) {
-        // Ignore errors checking admin status
-      }
-      
-      if (!isAdmin && debugEl.classList.contains('hide')) return;
-      
-      // Set up performance observer for long tasks
-      if ('PerformanceObserver' in window) {
-        try {
-          const observer = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) {
-              // Log long tasks (>100ms) to console
-              if (entry.duration > 100) {
-                console.warn('Long task detected:', {
-                  duration: Math.round(entry.duration),
-                  name: entry.name,
-                  startTime: Math.round(entry.startTime)
-                });
-              }
-            }
-          });
-          
-          observer.observe({ entryTypes: ['longtask'] });
-        } catch (e) {
-          console.error('Performance observer error:', e);
-        }
-      }
-      
-      // Monitor render performance
-      window.renderPerformance = [];
-      const originalRender = render;
-      render = function(...args) {
-        const start = performance.now();
-        const result = originalRender.apply(this, args);
-        const duration = performance.now() - start;
-        
-        window.renderPerformance.push({
-          resultCount: args[0]?.length || 0,
-          duration: Math.round(duration),
-          timestamp: new Date().toISOString()
-        });
-        
-        // Keep only the last 10 measurements
-        if (window.renderPerformance.length > 10) {
-          window.renderPerformance.shift();
-        }
-        
-        return result;
-      };
-    }
-    
     // Initialize everything when the DOM is ready
     window.addEventListener('DOMContentLoaded', () => {
       // Initialize preferences
@@ -4693,9 +4718,6 @@ const PORTAL_HTML = `<!DOCTYPE html>
       
       // Initialize PWA support
       setupPWASupport();
-      
-      // Initialize performance monitoring
-      setupPerformanceMonitoring();
       
       // Set initial query from URL if present
       const urlParams = new URLSearchParams(window.location.search);
@@ -4766,173 +4788,97 @@ const PORTAL_HTML = `<!DOCTYPE html>
         });
       });
     }
-    
-    // Analytics (privacy-focused)
-    class PrivacyAnalytics {
-      constructor() {
-        this.enabled = false;
-        this.sessionId = crypto.randomUUID();
-        this.sessionStart = new Date();
-        this.events = [];
-        this.maxEvents = 100;
-        
-        // Check if analytics is enabled in preferences
-        try {
-          this.enabled = localStorage.getItem('jack.analytics.enabled') === 'true';
-        } catch (e) {
-          console.error('Failed to check analytics preferences', e);
-        }
-      }
-      
-      trackEvent(category, action, label = null, value = null) {
-        if (!this.enabled) return;
-        
-        const event = {
-          category,
-          action,
-          label,
-          value,
-          timestamp: new Date().toISOString()
-        };
-        
-        this.events.push(event);
-        
-        // Trim events array if it gets too large
-        if (this.events.length > this.maxEvents) {
-          this.events = this.events.slice(-this.maxEvents);
-        }
-        
-        // Send events in batch (async)
-        this.scheduleFlush();
-      }
-      
-      scheduleFlush() {
-        if (this.flushTimeout) clearTimeout(this.flushTimeout);
-        this.flushTimeout = setTimeout(() => this.flush(), 5000);
-      }
-      
-      async flush() {
-        if (!this.enabled || this.events.length === 0) return;
-        
-        try {
-          // In a production environment, you would send these events to your analytics endpoint
-          // For now, we're just logging them and keeping them in memory
-          console.log('Analytics events batch:', this.events);
-          
-          // Clear events after successful send
-          this.events = [];
-        } catch (e) {
-          console.error('Failed to send analytics events', e);
-        }
-      }
-    }
-    
-    // Initialize analytics
-    window.analytics = new PrivacyAnalytics();
-    
-    // Track search events
-    const originalPerformSearch = performSearch;
-    performSearch = async function(query, ...args) {
-      // Track search start
-      window.analytics?.trackEvent('search', 'start', query);
-      
-      const start = performance.now();
-      try {
-        const result = await originalPerformSearch.call(this, query, ...args);
-        
-        // Track search completion
-        const duration = Math.round(performance.now() - start);
-        window.analytics?.trackEvent('search', 'complete', query, {
-          duration,
-          resultCount: result.metadata?.resultCount || 0,
-          mode: modeEl.value
-        });
-        
-        return result;
-      } catch (error) {
-        // Track search error
-        window.analytics?.trackEvent('search', 'error', query, {
-          error: error.message
-        });
-        throw error;
-      }
-    };
   </script>
 </body>
 </html>`;
 
-// ---------------- Main Server Implementation ----------------
+// ---------------- Server Implementation ----------------
 
 export default {
   async fetch(request, env, ctx) {
     try {
+      // Handle preflight requests with proper CORS
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'access-control-allow-origin': CORS_CONFIG.allowOrigin,
+            'access-control-allow-methods': CORS_CONFIG.allowMethods,
+            'access-control-allow-headers': CORS_CONFIG.allowHeaders,
+            'access-control-max-age': CORS_CONFIG.maxAge
+          }
+        });
+      }
+      
       const url = new URL(request.url);
       const path = url.pathname;
       const BASE_PATH = "";  // Set this if your app is not at the root
       
       // Admin panel route
       if (path === "/admin") {
-        return new Response(ADMIN_PANEL_HTML, {
+        return addCorsHeaders(new Response(ADMIN_PANEL_HTML, {
           status: 200,
           headers: { "content-type": "text/html; charset=utf-8" }
-        });
+        }));
       }
       
       // Service worker
       if (path === joinPath(BASE_PATH, "sw.js")) {
-        return new Response(SW_JS, {
+        return addCorsHeaders(new Response(SW_JS, {
           status: 200,
           headers: {
             "content-type": "application/javascript; charset=utf-8",
             "cache-control": "no-store"
           }
-        });
+        }));
       }
       
       // Manifest (support both paths for compatibility)
       if (path === joinPath(BASE_PATH, "site.webmanifest") || path === "/manifest.json") {
-        return new Response(MANIFEST_JSON, {
+        return addCorsHeaders(new Response(MANIFEST_JSON, {
           status: 200,
           headers: {
             "content-type": "application/manifest+json; charset=utf-8",
             "cache-control": "public, max-age=3600"
           }
-        });
+        }));
       }
       
       // Icons
       if (path === "/icon-192.png") {
-        return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_192.png", {
+        const iconResponse = await fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_192.png");
+        return addCorsHeaders(new Response(await iconResponse.arrayBuffer(), { 
           headers: { 
             "content-type": "image/png", 
             "cache-control": "public, max-age=31536000, immutable" 
           }
-        });
+        }));
       }
       if (path === "/icon-512.png") {
-        return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_512.png", {
+        const iconResponse = await fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_512.png");
+        return addCorsHeaders(new Response(await iconResponse.arrayBuffer(), { 
           headers: { 
             "content-type": "image/png", 
             "cache-control": "public, max-age=31536000, immutable" 
           }
-        });
+        }));
       }
       
       // API documentation
       if (path === "/api/docs") {
-        return serveApiDocs();
+        return addCorsHeaders(serveApiDocs());
       }
       
       // Health check endpoint
       if (path === "/health") {
-        return new Response(JSON.stringify({ 
+        return addCorsHeaders(new Response(JSON.stringify({ 
           status: 'healthy',
           version: '1.0.0',
           timestamp: new Date().toISOString()
         }), {
           status: 200,
           headers: { 'content-type': 'application/json' }
-        });
+        }));
       }
       
       // Aggregate endpoint (search API)
@@ -4943,31 +4889,25 @@ export default {
           // Validate required parameters
           const query = params.get("q");
           if (!query || !query.trim()) {
-            return new Response(JSON.stringify({
+            return addCorsHeaders(new Response(JSON.stringify({
               error: "missing query",
               status: 400
             }), {
               status: 400,
-              headers: { 
-                "content-type": "application/json",
-                "access-control-allow-origin": "*"
-              }
-            });
+              headers: { "content-type": "application/json" }
+            }));
           }
           
           // Validate numeric parameters
           const limit = parseInt(params.get("limit") || "10", 10);
           if (isNaN(limit) || limit < 3 || limit > 20) {
-            return new Response(JSON.stringify({
+            return addCorsHeaders(new Response(JSON.stringify({
               error: "invalid parameter: limit must be between 3 and 20",
               status: 400
             }), {
               status: 400,
-              headers: { 
-                "content-type": "application/json",
-                "access-control-allow-origin": "*"
-              }
-            });
+              headers: { "content-type": "application/json" }
+            }));
           }
           
           // Extract search parameters
@@ -4983,59 +4923,34 @@ export default {
           // Parse nocache flag
           const noCache = params.get("nocache") === "1";
           
-          // Load admin-defined custom sources
-          const sourcesConfig = loadSourcesConfig();
-          const currentMode = params.get("mode") || "niche";
+          // Apply rate limiting based on IP
+          const clientIP = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+          const rateLimitKey = `ratelimit:${clientIP}`;
           
-          // Filter sources based on mode and enabled status
-          const customSources = sourcesConfig.sources.filter(source => 
-            source.enabled && (source.mode === 'all' || source.mode === currentMode)
-          );
-          
-          // Add sources to diagnostic info
-          const customSourceDomains = customSources.map(s => s.domain);
-          
-          // Load content filter configuration
-          const filterConfig = loadFilterConfig();
-          
-          // Configure search query with enhanced content filtering
-          let searchQuery = query;
-          
-          // Add negative terms from filter configuration to exclude unwanted content
-          const negativeTerms = filterConfig.negativeTerms
-            .filter(term => term.enabled && term.category === 'content')
-            .map(term => term.term);
-          
-          if (negativeTerms.length > 0) {
-            // Add negative terms to search query, applying different strategies based on filter strength
-            if (filterStrength === 'strict') {
-              // In strict mode, add all negative terms as exclusions
-              negativeTerms.forEach(term => {
-                searchQuery += ` -"${term}"`;
-              });
-            } else if (filterStrength === 'moderate') {
-              // In moderate mode, add most important negative terms
-              negativeTerms.slice(0, 5).forEach(term => {
-                searchQuery += ` -"${term}"`;
-              });
-            } else {
-              // In light mode, only add a few key negative terms
-              negativeTerms.slice(0, 3).forEach(term => {
-                searchQuery += ` -"${term}"`;
-              });
+          // If we have KV for storage, use it for rate limiting
+          if (env && env.JACK_STORAGE) {
+            const currentRateLimit = await env.JACK_STORAGE.get(rateLimitKey);
+            const rateLimit = currentRateLimit ? parseInt(currentRateLimit) : 0;
+            
+            if (rateLimit > 50) { // Allow 50 requests per minute
+              return addCorsHeaders(new Response(JSON.stringify({
+                error: "rate limit exceeded, please try again in a minute",
+                status: 429
+              }), {
+                status: 429,
+                headers: { 
+                  "content-type": "application/json",
+                  "retry-after": "60"
+                }
+              }));
             }
+            
+            // Increment rate limit counter with 60 second expiry
+            await env.JACK_STORAGE.put(rateLimitKey, `${rateLimit + 1}`, { expirationTtl: 60 });
           }
           
-          // Add positive terms from filter configuration to prioritize relevant content
-          const positiveTerms = filterConfig.positiveTerms
-            .filter(term => term.enabled && term.category === 'content')
-            .map(term => term.term);
-          
-          if (positiveTerms.length > 0 && filterConfig.settings.requirePositiveMatch) {
-            // Create OR group of positive terms
-            const positiveGroup = positiveTerms.map(term => `"${term}"`).join(' OR ');
-            searchQuery += ` (${positiveGroup})`;
-          }
+          // Configure search query
+          let searchQuery = query;
           
           // Configure search for different modes
           let searchEndpoint = 'https://api.serper.dev/search';
@@ -5062,13 +4977,6 @@ export default {
             searchOptions.q += ` site:${site}`;
           }
           
-          // Apply custom sources if any
-          if (customSourceDomains.length > 0) {
-            // Create a site: query for each domain OR'd together
-            const sitesQuery = customSourceDomains.map(domain => `site:${domain}`).join(' OR ');
-            searchOptions.q += ` (${sitesQuery})`;
-          }
-          
           // Modify query based on search mode
           if (mode === 'niche') {
             searchOptions.q += ' "homo gay male" video site:homotube.com OR site:gaymaletube.com OR site:boyfriendtv.com OR site:manporn.xxx OR site:pornmd.com OR site:gaytube.com OR site:gaysexvideos.tv OR site:hellomorningstarrs.com OR site:onlydudes.tv OR site:redgay.net OR site:eporner.com OR site:gayforfans.com OR site:youngsfun.com OR site:redtube.com OR site:gotgayporn.com OR site:tubegalore.com OR site:manhub.com OR site:txxx.com';
@@ -5092,24 +5000,58 @@ export default {
             }
           }
           
-          // Full text search
-          const searchFetch = fetch(searchEndpoint, {
-            method: 'POST',
-            headers: {
-              'X-API-KEY': 'a1feeb90cb8f651bafa0b8c1a0d1a2d3f35e9d12',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(searchOptions)
-          });
+          // Add custom sources if provided
+          const customSourcesParam = params.get("custom_sources");
+          if (customSourcesParam) {
+            const customDomains = customSourcesParam.split(',').map(d => d.trim()).filter(Boolean);
+            if (customDomains.length > 0) {
+              // Create a site: query for each domain OR'd together
+              const sitesQuery = customDomains.map(domain => `site:${domain}`).join(' OR ');
+              searchOptions.q += ` (${sitesQuery})`;
+            }
+          }
           
-          // Wait for API response
-          const response = await searchFetch;
-          const data = await response.json();
+          // Check cache first if caching is enabled
+          const cacheKey = `search:${searchOptions.q}:${searchOptions.tbs || 'all'}`;
+          let cacheHit = false;
+          let data;
+          
+          if (!noCache && env && env.JACK_STORAGE) {
+            const cachedResponse = await env.JACK_STORAGE.get(cacheKey, { type: 'json' });
+            if (cachedResponse) {
+              data = cachedResponse;
+              cacheHit = true;
+            }
+          }
+          
+          // If not in cache, perform the search
+          if (!cacheHit) {
+            // Full text search
+            const searchFetch = await fetch(searchEndpoint, {
+              method: 'POST',
+              headers: {
+                'X-API-KEY': env?.SERPER_API_KEY || 'a1feeb90cb8f651bafa0b8c1a0d1a2d3f35e9d12',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(searchOptions)
+            });
+            
+            if (!searchFetch.ok) {
+              throw new Error(`Serper API returned ${searchFetch.status}: ${searchFetch.statusText}`);
+            }
+            
+            data = await searchFetch.json();
+            
+            // Cache the result for 1 hour if caching is enabled
+            if (env && env.JACK_STORAGE) {
+              await env.JACK_STORAGE.put(cacheKey, JSON.stringify(data), { expirationTtl: 3600 });
+            }
+          }
           
           // Process results
           const organicResults = data.organic || [];
           
-          // Map results to standardized format with enhanced link extraction
+          // Map results to standardized format
           let results = organicResults.map(result => {
             // Extract domain from URL
             let domain = '';
@@ -5118,193 +5060,4 @@ export default {
               domain = url.hostname.replace(/^www\./, '');
             } catch (e) {
               // If URL parsing fails, extract domain using regex
-              const match = result.link.match(/^(?:https?:\/\/)?(?:www\.)?([^\/]+)/i);
-              domain = match ? match[1] : '';
-            }
-            
-            // Extract video duration if available
-            let runtime = null;
-            const durationMatches = [
-              // Look for timestamps
-              result.title.match(/(\d+:\d+(?::\d+)?)/),
-              result.snippet?.match(/(\d+:\d+(?::\d+)?)/),
-              // Look for duration mentions
-              result.title.match(/(\d+)\s*min/i),
-              result.snippet?.match(/(\d+)\s*min/i),
-              // Look for length mentions
-              result.title.match(/length[:\s]+(\d+[\s:]*\d*)/i),
-              result.snippet?.match(/length[:\s]+(\d+[\s:]*\d*)/i),
-              // Look for duration mentions
-              result.title.match(/duration[:\s]+(\d+[\s:]*\d*)/i),
-              result.snippet?.match(/duration[:\s]+(\d+[\s:]*\d*)/i)
-            ].find(m => m);
-            
-            if (durationMatches) {
-              runtime = durationMatches[1];
-            }
-            
-            // Extract potential tags
-            const tags = [];
-            
-            // Look for hashtags
-            const hashtagMatches = (result.title + ' ' + (result.snippet || '')).match(/#([a-zA-Z0-9_]+)/g);
-            if (hashtagMatches) {
-              hashtagMatches.forEach(tag => {
-                tags.push(tag.substring(1));
-              });
-            }
-            
-            // Look for common porn categories
-            const categoryKeywords = ['amateur', 'hardcore', 'twink', 'bear', 'daddy', 'jock', 'muscle', 'bareback', 'group', 'solo'];
-            categoryKeywords.forEach(keyword => {
-              if ((result.title + ' ' + (result.snippet || '')).toLowerCase().includes(keyword)) {
-                if (!tags.includes(keyword)) {
-                  tags.push(keyword);
-                }
-              }
-            });
-            
-            // Get thumbnail URL
-            let thumbnail = null;
-            if (result.thumbnailUrl) {
-              thumbnail = result.thumbnailUrl;
-            } else if (result.imageUrl) {
-              thumbnail = result.imageUrl;
-            }
-            
-            return {
-              title: result.title,
-              site: domain,
-              url: result.link,
-              runtime: runtime,
-              thumbnail: thumbnail,
-              tags: tags.slice(0, 5), // Limit to 5 tags max
-              notes: "search result",
-              snippet: result.snippet
-            };
-          });
-          
-          // Apply server-side content filtering before returning results
-          if (filterStrength !== 'none') {
-            results = applyContentFilters(results, filterConfig);
-          }
-          
-          // Sort results by custom source priority if enabled
-          if (filterConfig.settings.prioritizeCustomSources) {
-            const customSourceSet = new Set(customSourceDomains);
-            const priorityMap = new Map();
-            
-            // Create priority map
-            customSources.forEach(source => {
-              let priority = 1; // Default
-              
-              if (source.priority === 'high') {
-                priority = 3;
-              } else if (source.priority === 'normal') {
-                priority = 2;
-              }
-              
-              priorityMap.set(source.domain, priority);
-            });
-            
-            // Sort results by source priority
-            results.sort((a, b) => {
-              const domainA = extractDomain(a.site);
-              const domainB = extractDomain(b.site);
-              
-              const isCustomA = customSourceSet.has(domainA);
-              const isCustomB = customSourceSet.has(domainB);
-              
-              if (isCustomA && !isCustomB) return -1;
-              if (!isCustomA && isCustomB) return 1;
-              
-              if (isCustomA && isCustomB) {
-                // Both are custom sources, compare priorities
-                const priorityA = priorityMap.get(domainA) || 1;
-                const priorityB = priorityMap.get(domainB) || 1;
-                return priorityB - priorityA; // Higher priority first
-              }
-              
-              return 0;
-            });
-          }
-          
-          return new Response(JSON.stringify({
-            query,
-            site,
-            mode,
-            durationQuery: duration,
-            freshness: fresh,
-            customSources: customSourceDomains,
-            results,
-            diag: {
-              mode,
-              hostMode,
-              durationMode,
-              fresh,
-              cached: !noCache,
-              processTime: new Date().getTime(),
-              customSourcesCount: customSourceDomains.length,
-              filterStrength,
-              requestId,
-              resultCount: results.length,
-              originalCount: organicResults.length
-            }
-          }), {
-            status: 200,
-            headers: {
-              "content-type": "application/json",
-              "access-control-allow-origin": "*",
-              "cache-control": noCache ? "no-store" : "public, max-age=3600"
-            }
-          });
-        } catch (error) {
-          console.error(`[handleAggregate] Error: ${error.message}`, error.stack);
-          return new Response(JSON.stringify({
-            error: "an unexpected error occurred",
-            requestId: crypto.randomUUID(),
-            status: 500
-          }), {
-            status: 500,
-            headers: { 
-              "content-type": "application/json",
-              "access-control-allow-origin": "*"
-            }
-          });
-        }
-      }
-      
-      // Main page
-      if (path === "/" || path === "/index.html") {
-        return new Response(PORTAL_HTML, {
-          status: 200,
-          headers: { 
-            "content-type": "text/html; charset=utf-8",
-            "cache-control": "public, max-age=300" // 5 minute cache
-          }
-        });
-      }
-      
-      // 404 Not Found
-      return new Response("not found", {
-        status: 404,
-        headers: { "content-type": "text/plain" }
-      });
-    } catch (error) {
-      // Global error handler for unhandled exceptions
-      console.error(`[Jack-GPT] Unhandled error: ${error.message}`, error.stack);
-      return new Response(JSON.stringify({
-        error: 'An unexpected error occurred',
-        requestId: crypto.randomUUID(),
-        timestamp: new Date().toISOString()
-      }), {
-        status: 500,
-        headers: {
-          'content-type': 'application/json',
-          'access-control-allow-origin': '*',
-          'cache-control': 'no-store'
-        }
-      });
-    }
-  }
-};
+              const match = result.link.match
