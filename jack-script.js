@@ -1445,6 +1445,78 @@ function saveDefaults(){
   };
   try{ localStorage.setItem("jack.defaults", JSON.stringify(obj)); }catch{}
 }
+// UI refs - add these to your existing variable declarations
+const errorContainer = document.getElementById("error-container");
+const searchProgress = document.getElementById("search-progress");
+const progressBar = document.getElementById("progress-bar");
+
+// Error handling
+function showError(message) {
+  errorContainer.textContent = message;
+  errorContainer.classList.add("show");
+  // Automatically hide after 5 seconds
+  setTimeout(() => {
+    errorContainer.classList.remove("show");
+  }, 5000);
+}
+
+function clearError() {
+  errorContainer.textContent = "";
+  errorContainer.classList.remove("show");
+}
+
+// Progress bar
+function startProgress() {
+  searchProgress.classList.add("active");
+  let progress = 0;
+  const interval = setInterval(() => {
+    progress += 5;
+    if (progress > 90) {
+      clearInterval(interval);
+    }
+    progressBar.style.width = progress + "%";
+  }, 150);
+  return interval;
+}
+
+function completeProgress(interval) {
+  clearInterval(interval);
+  progressBar.style.width = "100%";
+  setTimeout(() => {
+    searchProgress.classList.remove("active");
+    progressBar.style.width = "0%";
+  }, 500);
+}
+// Enhanced fetch with retry and error handling
+async function fetchWithRetry(url, options = {}, retries = 2) {
+  try {
+    const response = await fetch(url, { 
+      ...options, 
+      cache: "no-store" 
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      try {
+        const errorData = JSON.parse(errorText);
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          throw new Error(`HTTP ${response.status}: ${errorText.slice(0, 100)}`);
+        }
+        throw e;
+      }
+    }
+    
+    return response;
+  } catch (error) {
+    if (retries > 0 && (error.message.includes('timeout') || error.message.includes('network'))) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      return fetchWithRetry(url, options, retries - 1);
+    }
+    throw error;
+  }
+}
 function loadDefaults(){
   try{
     const s = localStorage.getItem("jack.defaults"); if(!s) return;
