@@ -1,13 +1,11 @@
 // @ts-nocheck
-// Jack All-in-One — UI + /aggregate API + PWA assets
-// ---------------- Service Worker payload (served at /sw.js) ----------------
+// Jack All-in-One — UI + /aggregate API + PWA // --------------- Service Worker Code (served when /sw.js is requested) ---------------
 const SW_JS = `// Jack-GPT Service Worker v1.0.0
 const CACHE_NAME = 'jack-portal-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/icon-192.png',
   '/icon-512.png',
-  '/site.webmanifest',
   '/manifest.json'
 ];
 
@@ -17,7 +15,6 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(ASSETS_TO_CACHE))
       .then(() => self.skipWaiting())
-      .catch(error => console.error('[SW] Cache initialization failed:', error))
   );
 });
 
@@ -33,12 +30,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - implement cache-first strategy for non-API requests
+// Fetch event - serve from cache if available
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) return;
   
-  // Skip API requests - always get fresh data
+  // Skip API requests
   if (event.request.url.includes('/aggregate')) return;
   
   event.respondWith(
@@ -60,24 +57,21 @@ self.addEventListener('fetch', (event) => {
             cache.put(event.request, responseToCache);
           });
           return response;
-        }).catch(error => {
-          console.error('[SW] Fetch failed:', error);
-          // For navigation requests, return the offline page
-          if (event.request.mode === 'navigate') {
-            return caches.match('/');
-          }
-          throw error;
         });
       })
   );
-});
-
-// Handle messages from the main thread
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
 });`;
+
+// Then in your route handler, keep the existing service worker route:
+// if (path === joinPath(BASE_PATH, "sw.js")) {
+//   return new Response(SW_JS, {
+//     status: 200,
+//     headers: {
+//       "content-type": "application/javascript; charset=utf-8",
+//       "cache-control": "no-store"
+//     }
+//   });
+// }
 
 const BASE_PATH = "/";
 
