@@ -25,15 +25,12 @@ export default {
       });
     }
 
-    // Service worker endpoint
+    // Service worker
 if (path === joinPath(BASE_PATH, "sw.js")) {
-  return new Response(SW_JS, {
-    status: 200,
+  return fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/sw.js", {
     headers: {
       "content-type": "application/javascript; charset=utf-8",
-      "cache-control": "no-store",
-      // If BASE_PATH isn’t “/”, let the SW control your whole app scope:
-      "Service-Worker-Allowed": BASE_PATH // or "/" if you want root scope
+      "cache-control": "no-store"
     }
   });
 }
