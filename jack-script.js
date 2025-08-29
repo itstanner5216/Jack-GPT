@@ -116,7 +116,36 @@ if (path === joinPath(BASE_PATH, "site.webmanifest") || path === "/manifest.json
     }
   });
 }
-
+// Register service worker for PWA support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(registration => {
+        // Check for updates
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // New version available - could show update notification here
+              console.log('New service worker version installed');
+            }
+          });
+        });
+      })
+      .catch(error => {
+        console.error('Service worker registration failed:', error);
+      });
+      
+    // Handle updates when the user returns to the app
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+  });
+}
 const BASE_PATH = "/";
 
 // API documentation
