@@ -646,6 +646,20 @@ function serveApiDocs() {
         color: var(--secondary);
         margin-top: 2rem;
       }
+        } catch (error) {
+    console.error(`[handleAggregate] Error: ${error.message}`, error.stack);
+    return new Response(JSON.stringify({
+      error: "an unexpected error occurred",
+      requestId: crypto.randomUUID(),
+      status: 500
+    }), {
+      status: 500,
+      headers: { 
+        "content-type": "application/json",
+        "access-control-allow-origin": "*"
+      }
+    });
+  }
     </style>
   </head>
   <body>
