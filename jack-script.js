@@ -114,6 +114,23 @@ export default {
         }
       });
     }
+    
+    // API documentation
+if (path === "/api/docs") {
+  return serveApiDocs();
+}
+
+// Health check endpoint
+if (path === "/health") {
+  return new Response(JSON.stringify({ 
+    status: 'healthy',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  });
+}
 
     // Service worker
 if (path === joinPath(BASE_PATH, "sw.js")) {
@@ -125,6 +142,7 @@ if (path === joinPath(BASE_PATH, "sw.js")) {
     }
   });
 }
+
     // API on same origin
     if (path === "/aggregate") {
       return handleAggregate(request, env, ctx);
