@@ -1,2793 +1,17 @@
-// @ts-nocheck
-// Jack-GPT Enterprise - All-in-One Self-Contained Implementation
-// Complete with UI, API, and service worker
-
-// -------------------- Configuration and Constants --------------------
-const APP_VERSION = '2.0.0';
-const BUILD_DATE = '2025-08-29';
-
-// API Keys with fallbacks
-const SERPER_API_KEY = 'a1feeb90cb8f651bafa0b8c1a0d1a2d3f35e9d12'; // Fallback key
-const GOOGLE_KEY = 'AIzaSyAZhWamw25pgVB_3NAhvQOuSbkeh-mEWu0'; // Fallback key
-const GOOGLE_CX = '73e4998767b3c4800'; // Fallback CSE ID
-const FORUM_KEY = '39c5bdf0ac8645b5c9cc3f9a88c7ad4683395e78ec517ac35466bf5df2cf305e'; // Fallback key
-
-// Host configuration
-const FREE_HOSTS = [
-  "xvideos.com", "xnxx.com", "xhamster.com", "spankbang.com", "eporner.com", "porntrex.com",
-  "thisvid.com", "motherless.com", "pornhub.com", "youporn.com", "redtube.com",
-  "gayporntube.com", "gaymaletube.com", "boyfriendtv.com",
-  // additions
-  "ggroot.com", "gotgayporn.com", "gotporn.com", "nuvid.com", "winporn.com",
-  "youporngay.com", "rockettube.com", "gaymenring.com", "gayfuckporn.com",
-  "manpornxxx.com", "hotxxx.com", "gayrookievideos.com", "guystricked.com",
-  "101boyvideos.com", "gaytwinksporn.net", "tumbex.com"
-];
-
-const SOFT_ALLOW_HOSTS = [
-  "redgifs.com", "twitter.com", "x.com", "yuvutu.com", "tnaflix.com", "tube8.com",
-  "empflix.com", "hqporner.com", "txxx.com", "porndoe.com"
-];
-
-const KNOWN_PAYWALL = new Set([
-  "onlyfans.com", "justfor.fans", "camsoda.com", "chaturbate.com",
-  "men.com", "seancody.com", "helixstudios.net", "corbinfisher.com", "belamistudios.com",
-  "timtales.com", "sayuncle.com", "peterfever.com", "chaosmen.com", "justusboys.com", "gayforit.eu", "xtube.com",
-  // Prefixed with www.
-  "www.onlyfans.com", "www.justfor.fans", "www.camsoda.com", "www.chaturbate.com",
-  "www.men.com", "www.seancody.com", "www.helixstudios.net", "www.corbinfisher.com", "www.belamistudios.com",
-  "www.timtales.com", "www.sayuncle.com", "www.peterfever.com", "www.chaosmen.com", "www.justusboys.com", "www.gayforit.eu", "www.xtube.com"
-]);
-
-const BAD_PATH_HINTS = [
-  "/verify", "/signup", "/login", "/premium", "/trial", "/join", "/checkout", "/subscribe", "/account", "/members"
-];
-
-// Pattern matching
-const HTML_PLAYER_RX = /(og:video|<video|\bsource\s+src=|jwplayer|video-js|plyr|hls|m3u8|\.mp4\b|data-hls|player-container|html5player)/i;
-const GAY_POSITIVE = /\b(gay|gayporn|gaytube|m\/m|\bmm\b|boyfriend|twink|otter|cub|bearsex|gaysex|straight friend|bottom|anal)\b/i;
-const HETERO_RED_FLAGS = /\b(boy\/girl|man\/woman|m\/f|\bmf\b|f\/m|\bff\b|pussy|boobs|lesbian|stepmom|stepsis|milf|sister)\b/i;
-
-// Freshness options
-const FRESH_OK = new Set(["d7", "m1", "m3", "y1", "all"]);
-
-// User agents
-const UA_DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-const UA_MOBILE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
-
-// -------------------- Utility Functions --------------------
-// CORS handling
-function addCorsHeaders(response) {
-  const CORS_HEADERS = {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET, OPTIONS",
-    "access-control-allow-headers": "*"
-  };
-  
-  // If already a Response object
-  if (response instanceof Response) {
-    const newHeaders = new Headers(response.headers);
-    for (const [key, value] of Object.entries(CORS_HEADERS)) {
-      newHeaders.set(key, value);
-    }
-    
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders
-    });
-  }
-  
-  // If it's raw data to be converted to a Response
-  return new Response(response, {
-    headers: {
-      ...CORS_HEADERS,
-      "content-type": "application/json; charset=utf-8"
-    }
-  });
-}
-
-// Path joining
-function joinPath(base, leaf) {
-  const b = base.endsWith("/") ? base.slice(0, -1) : base;
-  return b + "/" + leaf;
-}
-
-// HTML response helper
-function htmlResponse(html, code = 200) {
-  return new Response(html, {
-    status: code,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store"
-    }
-  });
-}
-
-// JSON response helpers
-function jerr(msg, code = 400) {
-  return new Response(JSON.stringify({ error: msg, status: code }), {
-    status: code,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET, OPTIONS",
-      "access-control-allow-headers": "*"
-    }
-  });
-}
-
-function jok(data, code = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status: code,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET, OPTIONS",
-      "access-control-allow-headers": "*"
-    }
-  });
-}
-
-// URL and string handling utilities
-function clampInt(v, def, min, max) {
-  const n = parseInt(v ?? "", 10);
-  return Number.isNaN(n) ? def : Math.max(min, Math.min(max, n));
-}
-
-function sanitizeSiteParam(s) {
-  if (!s) return null;
-  try {
-    const u = new URL(s.includes("://") ? s : `https://${s}`);
-    return u.hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return s.replace(/^[a-z]+:\/\//i, "").split("/")[0].replace(/^www\./, "").trim().toLowerCase();
-  }
-}
-
-function safeHost(u) {
-  try {
-    return new URL(u).hostname.toLowerCase();
-  } catch {
-    return "";
-  }
-}
-
-function normUrl(raw) {
-  try {
-    const x = new URL(raw);
-    x.hash = "";
-    const KEEP = new Set(["v", "viewkey", "id"]); // keep identifiers
-    for (const [k] of x.searchParams) {
-      if (!KEEP.has(k)) x.searchParams.delete(k);
-    }
-    let s = x.toString();
-    if (s.endsWith("/")) s = s.slice(0, -1);
-    return s;
-  } catch {
-    return raw;
-  }
-}
-
-function neutralizeTitle(s) {
-  return (s || "").normalize("NFKC")
-    .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
-    .replace(/\s{2,}/g, " ")
-    .trim() || "clip";
-}
-
-// URL heuristics
-function looksLikeVideoUrl(u) {
-  try {
-    const p = new URL(u).pathname.toLowerCase();
-    return /\/(video|watch|view|embed|player)(\/|$)/.test(p) || /\/\d{3,}\/?$/i.test(p);
-  } catch {
-    return false;
-  }
-}
-
-function looksLikeSearchUrl(u) {
-  try {
-    const X = new URL(u);
-    const p = X.pathname.toLowerCase();
-    const qs = X.search.toLowerCase();
-    if (/\b(k|search|query|keyword|s)\b=/.test(qs)) return true;
-    const isContent = /\/(video|watch|view|embed)\b/.test(p) || /\/\d{2,}(\/|$)/.test(p);
-    if (isContent) return false;
-    const looksSlug = /\/[a-z0-9-]+$/i.test(p) && !p.endsWith("/");
-    if (looksSlug && p.split("/").length <= 4) return false;
-    return /\/(search|tags?|categories|videos|porn)(\/|$)/.test(p);
-  } catch {
-    return /(\?k=|\/search(\/|$)|\/tags?(\/|$)|\/videos(\/|$)|\/porn(\/|$)|\/categories?(\/|$))/i.test(String(u).toLowerCase());
-  }
-}
-
-// Content filtering utilities
-function gayOnlyPass(title, textSample, host) {
-  const titleT = (title || "").toLowerCase();
-  const textT = (textSample || "").toLowerCase();
-  const hasGay = GAY_POSITIVE.test(titleT) || GAY_POSITIVE.test(textT);
-  const hasHet = HETERO_RED_FLAGS.test(titleT) || HETERO_RED_FLAGS.test(textT);
-  const likelyGaySite = /(gayporntube|gaymaletube|boyfriendtv|rockettube|youporngay|gaytwinksporn|gaymenring)/i.test(host || "");
-  
-  if (hasHet && !hasGay) return false;
-  if (hasGay || likelyGaySite) return true;
-  return false;
-}
-
-// Duration handling
-function durToSeconds(d) {
-  if (!d) return null;
-  if (/^\d+$/.test(d)) return parseInt(d, 10);
-  const iso = d.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
-  if (iso) return (+iso[1] || 0) * 3600 + (+iso[2] || 0) * 60 + (+iso[3] || 0);
-  const mm = d.match(/\b(\d{1,2}):(\d{2})\b/);
-  if (mm) return +mm[1] * 60 + +mm[2];
-  return null;
-}
-
-function parseDurationQuery(s) {
-  if (!s) return null;
-  const x = s.trim().toLowerCase();
-  if (/^\d{1,5}-\d{1,5}$/.test(x)) {
-    const [a, b] = x.split("-").map(n => +n);
-    return { min: Math.min(a, b), max: Math.max(a, b) };
-  }
-  if (/^pt/.test(x)) {
-    const sec = durToSeconds(x);
-    if (sec != null) return { min: sec, max: sec };
-  }
-  const lt = x.match(/^<?=?\s*(\d{1,3})\s*m$/);
-  if (lt) return { min: 0, max: +lt[1] * 60 };
-  const gt = x.match(/^(\d{1,3})\s*\+\s*m$/);
-  if (gt) return { min: +gt[1] * 60, max: 86400 };
-  const rng = x.match(/^(\d{1,3})\s*-\s*(\d{1,3})\s*m$/);
-  if (rng) {
-    const a = +rng[1] * 60, b = +rng[2] * 60;
-    return { min: Math.min(a, b), max: Math.max(a, b) };
-  }
-  const sec = durToSeconds(x);
-  if (sec != null) return { min: sec, max: sec };
-  return null;
-}
-
-function fitsDuration(sec, range, host, durationMode) {
-  if (!range || sec == null) return true;
-  let tol = durationMode === "lenient" ? 60 : 15;
-  if (FREE_HOSTS.includes(host) || SOFT_ALLOW_HOSTS.includes(host)) tol += 45;
-  return sec >= (range.min - tol) && sec <= (range.max + tol);
-}
-
-function fmtMMSS(sec) {
-  const s = Math.max(0, Math.round(sec || 0));
-  const m = Math.floor(s / 60), r = s % 60;
-  return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-// Network utilities
-async function fetchWithTimeout(resource, options, timeout = 9000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const res = await fetch(resource, {
-      ...options,
-      signal: controller.signal,
-      cf: { cacheTtl: 0, cacheEverything: false }
-    });
-    clearTimeout(id);
-    return res;
-  } catch (e) {
-    clearTimeout(id);
-    throw e;
-  }
-}
-
-async function fetchJSON(u, i, t = 10000) {
-  try {
-    const r = await fetchWithTimeout(u, i, t);
-    if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
-    return await r.json();
-  } catch (e) {
-    console.error(`fetchJSON error: ${e.message}`);
-    return null;
-  }
-}
-
-// Error handling
-function pushErr(arr, msg) {
-  if (arr.length < 20) arr.push(String(msg).slice(0, 220));
-}
-
-// Concurrency utilities
-async function poolMap(items, worker, n = 6) {
-  const out = new Array(items.length);
-  let i = 0;
-  const runners = Array(Math.min(n, items.length)).fill(0).map(async function run() {
-    while (i < items.length) {
-      const idx = i++;
-      try {
-        out[idx] = await worker(items[idx], idx);
-      } catch (e) {
-        out[idx] = null;
-        console.error(`poolMap worker error: ${e.message}`);
-      }
-    }
-  });
-  await Promise.all(runners);
-  return out;
-}
-
-// Listing-page harvester → extract direct video links
-function harvestVideoLinksFromListing(html, baseUrl) {
-  const out = [];
-  const hrefs = Array.from(html.matchAll(/<a[^>]+href=["']([^"']+)["']/ig))
-    .map(m => m[1]).filter(Boolean);
-  const abs = hrefs.map(h => {
-    try {
-      return new URL(h, baseUrl).toString();
-    } catch {
-      return null;
-    }
-  }).filter(Boolean);
-  const isVideoish = (u) => {
-    try {
-      const H = new URL(u).hostname.toLowerCase();
-      const p = new URL(u).pathname.toLowerCase();
-      return /\/(video|watch|view|embed)\b/.test(p)
-        || (/xvideos|xnxx/.test(H) && /\/video-/.test(p))
-        || (/spankbang/.test(H) && /\/video\//.test(p))
-        || (/thisvid/.test(H) && /\/videos\//.test(p))
-        || (/xhamster/.test(H) && /\/videos\//.test(p));
-    } catch {
-      return false;
-    }
-  };
-  for (const u of abs) if (isVideoish(u)) out.push(normUrl(u));
-  return Array.from(new Set(out)).slice(0, 12);
-}
-
-// Relevance scoring
-function titleRelevanceBonus(query, title) {
-  const STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "for", "in", "on", "at", "with", "by", "from", "this", "that", "these", "those", "public", "amateur", "video", "clip"]);
-  const qTok = (query || "").toLowerCase().match(/[a-z0-9]+/g) || [];
-  const tTok = (String(title) || "").toLowerCase().match(/[a-z0-9]+/g) || [];
-  const tSet = new Set(tTok.filter(w => !STOP.has(w)));
-  let matches = 0;
-  for (const w of qTok) if (!STOP.has(w) && tSet.has(w)) matches++;
-  return Math.min(6, matches * 2);
-}
-
-// Image optimization
-function optimizeThumbnail(url, width = 280) {
-  if (!url) return null;
-  
-  // YouTube thumbnail optimization
-  if (url.match(/\/vi\/([^\/]+)\/\w+\.jpg$/)) {
-    return url.replace(/\/\w+\.jpg$/, '/mqdefault.jpg');
-  }
-  
-  // Google CDN optimization
-  if (url.match(/^https?:\/\/[^\/]+\.(googleusercontent|ggpht|ytimg)\.com\//)) {
-    return `${url}=w${width}`;
-  }
-  
-  return url;
-}
-
-// -------------------- Multi-Provider Search Service --------------------
-class SearchService {
-  constructor(env) {
-    this.env = env;
-    this.providers = [
-      {
-        name: 'serper',
-        isEnabled: true,
-        dailyQuota: 100,
-        isQuotaExceeded: false,
-        resetTime: null,
-        handler: this.searchWithSerper.bind(this)
-      },
-      {
-        name: 'google',
-        isEnabled: true,
-        dailyQuota: 100,
-        isQuotaExceeded: false,
-        resetTime: null,
-        handler: this.searchWithGoogle.bind(this)
-      }
-    ];
-    
-    // Add Brave search if API key is available
-    if (env?.BRAVE_API_KEY) {
-      this.providers.push({
-        name: 'brave',
-        isEnabled: true,
-        dailyQuota: 30,
-        isQuotaExceeded: false,
-        resetTime: null,
-        handler: this.searchWithBrave.bind(this)
-      });
-    }
-  }
-  
-  async search(query, options) {
-    const searchOptions = { ...options };
-    let lastError = null;
-    let results = null;
-    
-    // Try each provider in order until one succeeds
-    for (const provider of this.providers) {
-      if (!provider.isEnabled || provider.isQuotaExceeded) {
-        console.log(`Skipping provider ${provider.name}: ${provider.isQuotaExceeded ? 'quota exceeded' : 'disabled'}`);
-        continue;
-      }
-      
-      try {
-        console.log(`Attempting search with provider: ${provider.name}`);
-        results = await provider.handler(query, searchOptions);
-        
-        if (results && results.length > 0) {
-          // Successfully got results
-          return {
-            success: true,
-            provider: provider.name,
-            results,
-            metadata: {
-              provider: provider.name,
-              query,
-              timestamp: new Date().toISOString()
-            }
-          };
-        }
-      } catch (error) {
-        lastError = error;
-        
-        // Check if the error indicates quota exceeded
-        if (this.isQuotaExceededError(error, provider.name)) {
-          console.log(`Quota exceeded for provider: ${provider.name}`);
-          provider.isQuotaExceeded = true;
-          
-          // Set reset time based on provider's reset policy
-          provider.resetTime = this.getQuotaResetTime(provider.name);
-        } else {
-          console.error(`Error with provider ${provider.name}:`, error);
-        }
-      }
-    }
-    
-    // If we get here, all providers failed
-    return {
-      success: false,
-      error: lastError?.message || 'All search providers failed',
-      metadata: {
-        allProvidersExhausted: true,
-        lastError: lastError?.message,
-        timestamp: new Date().toISOString()
-      }
-    };
-  }
-  
-  isQuotaExceededError(error, providerName) {
-    const status = error.status || error.statusCode;
-    const message = error.message || '';
-    
-    if (status === 429) return true;
-    
-    if (providerName === 'serper' && 
-        (message.includes('quota') || message.includes('limit') || message.includes('exceeded'))) {
-      return true;
-    }
-    
-    if (providerName === 'google' && 
-        (message.includes('quota') || message.includes('limit') || message.includes('Daily Limit'))) {
-      return true;
-    }
-    
-    if (providerName === 'brave' && 
-        (message.includes('quota') || message.includes('rate limit'))) {
-      return true;
-    }
-    
-    return false;
-  }
-  
-  getQuotaResetTime(providerName) {
-    const now = new Date();
-    
-    // Different providers have different reset policies
-    if (providerName === 'serper') {
-      // Serper resets daily
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-      return tomorrow.toISOString();
-    } else if (providerName === 'google') {
-      // Google PSE also resets daily
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-      return tomorrow.toISOString();
-    } else if (providerName === 'brave') {
-      // Brave resets after 24 hours typically
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(now.getHours(), now.getMinutes(), 0, 0);
-      return tomorrow.toISOString();
-    }
-    
-    // Default: reset after 24 hours
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString();
-  }
-  
-  async searchWithSerper(query, options) {
-    const searchEndpoint = 'https://api.serper.dev/search';
-    
-    const searchOptions = {
-      q: query,
-      gl: options.country || 'us',
-      hl: options.language || 'en',
-      num: options.limit || 10
-    };
-    
-    // Add time-based filters
-    if (options.fresh) {
-      searchOptions.tbs = this.convertFreshnessToSerper(options.fresh);
-    }
-    
-    // Add site restrictions if specified
-    if (options.site) {
-      searchOptions.q += ` site:${options.site}`;
-    }
-    
-    const response = await fetch(searchEndpoint, {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': this.env?.SERPER_API_KEY || SERPER_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(searchOptions)
-    });
-    
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Serper API error (${response.status}): ${text}`);
-    }
-    
-    const data = await response.json();
-    return this.normalizeSerperResults(data);
-  }
-  
-  normalizeSerperResults(data) {
-    const organicResults = data.organic || [];
-    
-    return organicResults.map(result => {
-      // Extract domain from URL
-      let domain = '';
-      try {
-        const url = new URL(result.link);
-        domain = url.hostname.replace(/^www\./, '');
-      } catch (e) {
-        const match = result.link.match(/^(?:https?:\/\/)?(?:www\.)?([^\/]+)/i);
-        domain = match ? match[1] : '';
-      }
-      
-      // Extract video duration if available
-      let runtime = null;
-      const durationMatches = [
-        result.title.match(/(\d+:\d+(?::\d+)?)/),
-        result.snippet?.match(/(\d+:\d+(?::\d+)?)/),
-        result.title.match(/(\d+)\s*min/i),
-        result.snippet?.match(/(\d+)\s*min/i)
-      ].find(m => m);
-      
-      if (durationMatches) {
-        runtime = durationMatches[1];
-      }
-      
-      // Extract tags
-      const tags = [];
-      const keywordMatches = (result.title + ' ' + (result.snippet || '')).match(/\b(gay|male|homo|amateur|twink|bear)\b/gi);
-      if (keywordMatches) {
-        const uniqueKeywords = [...new Set(keywordMatches.map(k => k.toLowerCase()))];
-        tags.push(...uniqueKeywords.slice(0, 5));
-      }
-      
-      return {
-        title: result.title,
-        site: domain,
-        url: result.link,
-        runtimeSec: runtime ? durToSeconds(runtime) : null,
-        thumbnail: result.imageUrl || null,
-        tags: tags,
-        notes: "search result",
-        provider: 'serper'
-      };
-    });
-  }
-  
-  convertFreshnessToSerper(fresh) {
-    switch(fresh) {
-      case 'd7': return 'qdr:w'; // last week
-      case 'm1': return 'qdr:m'; // last month
-      case 'm3': return 'qdr:m3'; // last 3 months
-      case 'y1': return 'qdr:y'; // last year
-      default: return ''; // all time
-    }
-  }
-  
-  async searchWithGoogle(query, options) {
-    const googleKey = this.env?.GOOGLE_KEY || GOOGLE_KEY;
-    const googleCx = this.env?.GOOGLE_CX || GOOGLE_CX;
-    
-    const CSE_PAGES = [1];
-    const results = [];
-    
-    for (const start of CSE_PAGES) {
-      const u = new URL("https://www.googleapis.com/customsearch/v1");
-      u.searchParams.set("key", googleKey);
-      u.searchParams.set("cx", googleCx);
-      u.searchParams.set("q", query);
-      u.searchParams.set("num", String(options.limit || 10));
-      u.searchParams.set("start", String(start));
-      u.searchParams.set("gl", "us");
-      u.searchParams.set("hl", "en");
-      
-      if (options.fresh && options.fresh !== "all") {
-        u.searchParams.set("dateRestrict", options.fresh);
-      }
-      
-      const data = await fetchJSON(u.toString(), { headers: { "User-Agent": UA_MOBILE }}, 10000);
-      if (!data || !Array.isArray(data?.items)) continue;
-      
-      for (const it of data.items) {
-        const link = normUrl(it.link || "");
-        const host = (new URL(link).hostname || "").toLowerCase();
-        
-        // Skip known paywalls
-        if (KNOWN_PAYWALL.has(host)) continue;
-        
-        // Extract duration
-        let dur = null;
-        const pm = it.pagemap || {};
-        if (Array.isArray(pm.videoobject) && pm.videoobject[0]?.duration) {
-          dur = durToSeconds(String(pm.videoobject[0].duration));
-        }
-        if (!dur && pm.metatags?.[0]?.["og:video:duration"]) {
-          dur = parseInt(pm.metatags[0]["og:video:duration"], 10);
-        }
-        if (!dur && it.title) {
-          const m = it.title.match(/\b(\d{1,2}):(\d{2})\b/);
-          if (m) dur = +m[1]*60 + +m[2];
-        }
-        
-        // Extract thumbnail
-        let thumb = null;
-        if (pm?.cse_thumbnail?.[0]?.src) thumb = pm.cse_thumbnail[0].src;
-        else if (pm?.metatags?.[0]?.["og:image"]) thumb = pm.metatags[0]["og:image"];
-        
-        // Extract tags
-        const tags = [];
-        const keywordMatches = (it.title + ' ' + (it.snippet || '')).match(/\b(gay|male|homo|amateur|twink|bear)\b/gi);
-        if (keywordMatches) {
-          const uniqueKeywords = [...new Set(keywordMatches.map(k => k.toLowerCase()))];
-          tags.push(...uniqueKeywords.slice(0, 5));
-        }
-        
-        results.push({
-          title: neutralizeTitle(it.title || ""),
-          site: host,
-          url: link,
-          runtimeSec: dur,
-          thumbnail: thumb ? optimizeThumbnail(thumb) : null,
-          tags: tags,
-          notes: "search result",
-          provider: 'google'
-        });
-      }
-    }
-    
-    return results;
-  }
-  
-  async searchWithBrave(query, options) {
-    const apiKey = this.env?.BRAVE_API_KEY;
-    if (!apiKey) {
-      throw new Error('Brave API key not configured');
-    }
-    
-    const searchEndpoint = 'https://api.search.brave.com/res/v1/web/search';
-    
-    const params = new URLSearchParams({
-      q: query,
-      count: options.limit || 10,
-      offset: 0,
-      spellcheck: true,
-      safesearch: 'off'
-    });
-    
-    // Apply freshness filter if specified
-    if (options.fresh) {
-      params.append('freshness', this.convertFreshnessToBrave(options.fresh));
-    }
-    
-    // Add site filter if specified
-    if (options.site) {
-      params.append('site', options.site);
-    }
-    
-    const response = await fetch(`${searchEndpoint}?${params.toString()}`, {
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip',
-        'X-Subscription-Token': apiKey,
-        'User-Agent': UA_MOBILE
-      }
-    });
-    
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Brave API error (${response.status}): ${text}`);
-    }
-    
-    const data = await response.json();
-    return this.normalizeBraveResults(data);
-  }
-  
-  normalizeBraveResults(data) {
-    const results = data.web?.results || [];
-    
-    return results.map(result => {
-      // Extract domain
-      let domain = '';
-      try {
-        domain = new URL(result.url).hostname.replace(/^www\./, '');
-      } catch {
-        domain = '';
-      }
-      
-      // Extract duration if available
-      let runtime = null;
-      const durationMatches = [
-        result.title.match(/(\d+:\d+(?::\d+)?)/),
-        result.description?.match(/(\d+:\d+(?::\d+)?)/),
-        result.title.match(/(\d+)\s*min/i),
-        result.description?.match(/(\d+)\s*min/i)
-      ].find(m => m);
-      
-      if (durationMatches) {
-        runtime = durToSeconds(durationMatches[1]);
-      }
-      
-      // Extract tags
-      const tags = [];
-      const keywordMatches = (result.title + ' ' + (result.description || '')).match(/\b(gay|male|homo|amateur|twink|bear)\b/gi);
-      if (keywordMatches) {
-        const uniqueKeywords = [...new Set(keywordMatches.map(k => k.toLowerCase()))];
-        tags.push(...uniqueKeywords.slice(0, 5));
-      }
-      
-      return {
-        title: result.title,
-        site: domain,
-        url: result.url,
-        runtimeSec: runtime,
-        thumbnail: result.thumbnail ? optimizeThumbnail(result.thumbnail) : null,
-        tags: tags,
-        notes: "search result",
-        provider: 'brave'
-      };
-    });
-  }
-  
-  convertFreshnessToBrave(fresh) {
-    switch(fresh) {
-      case 'd7': return 'pd'; // past day
-      case 'm1': return 'pm'; // past month
-      case 'm3': return 'pm'; // past month (closest option)
-      case 'y1': return 'py'; // past year
-      default: return 'a'; // all time
-    }
-  }
-}
-
-// -------------------- Page Analysis Function --------------------
-async function getPlayableMeta(uStr) {
-  const headers = { 
-    "User-Agent": UA_MOBILE,
-    "Accept-Language": "en-US,en;q=0.9" 
-  };
-  let finalUrl = uStr, ct = "", textSample = "", thumb = null, rawHtml = "";
-  try {
-    const res = await fetchWithTimeout(uStr, { method: "GET", redirect: "follow", headers }, 9000);
-    finalUrl = res.url || finalUrl;
-    ct = res.headers.get("content-type") || "";
-    if ((ct || "").includes("text/html")) {
-      const body = await res.text();
-      rawHtml = body;
-      textSample = body.slice(0, 40000).toLowerCase();
-      // thumbnails
-      const og = body.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-        || body.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-      const tw = body.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-      thumb = (og && og[1]) || (tw && tw[1]) || null;
-      if (!thumb) {
-        const cdn = body.match(/https?:\/\/[^"']+\/(?:thumb|preview|poster)[^"']+\.(?:jpg|jpeg|png|webp)/i);
-        if (cdn) thumb = cdn[0];
-      }
-    }
-  } catch (e) {
-    console.error(`Network error: ${e.message}`);
-    return { ok: false, url: finalUrl, ct, playable: false };
-  }
-  
-  const urlHost = safeHost(finalUrl);
-  
-  // Orientation
-  const passLenientBaseline = gayOnlyPass("", textSample, urlHost);
-  if (!passLenientBaseline) {
-    return { ok: true, url: finalUrl, ct, playable: false, orientationFail: true, thumbnail: thumb, duration: null };
-  }
-  
-  // Listing harvest
-  let harvested = undefined;
-  if (looksLikeSearchUrl(finalUrl) && 
-      (FREE_HOSTS.includes(urlHost) || SOFT_ALLOW_HOSTS.includes(urlHost)) && 
-      rawHtml) {
-    const found = harvestVideoLinksFromListing(rawHtml, finalUrl);
-    if (found.length) harvested = found;
-  }
-  
-  // duration sniff
-  let durationSec = null;
-  if (textSample) {
-    const ld = textSample.match(/"duration"\s*:\s*"(pt[^"]+)"/i);
-    if (ld) durationSec = durToSeconds(ld[1]);
-    
-    if (!durationSec) {
-      const og = textSample.match(/property=["']og:video:duration["'][^>]*content=["'](\d{1,6})["']/i);
-      if (og) durationSec = parseInt(og[1], 10);
-    }
-    
-    if (!durationSec) {
-      const m = textSample.match(/\b(\d{1,2}):(\d{2})\b/);
-      if (m) durationSec = +m[1] * 60 + +m[2];
-    }
-  }
-  
-  const playable = FREE_HOSTS.includes(urlHost)
-    || SOFT_ALLOW_HOSTS.includes(urlHost)
-    || /video|mp4|m3u8|application\/octet-stream/i.test(ct)
-    || HTML_PLAYER_RX.test(textSample || "")
-    || /player|embed|hls|m3u8|\.mp4\b/i.test(finalUrl);
-    
-  return { 
-    ok: true, 
-    url: finalUrl, 
-    ct, 
-    playable, 
-    duration: durationSec, 
-    thumbnail: thumb ? optimizeThumbnail(thumb) : null, 
-    harvested 
-  };
-}
-
-// -------------------- Main API Handler --------------------
-async function handleAggregate(request, env, ctx) {
-  // Handle preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-methods": "GET, OPTIONS",
-        "access-control-allow-headers": "*"
-      }
-    });
-  }
-  
-  if (request.method !== "GET") {
-    return jerr("method not allowed", 405);
-  }
-  
-  const url = new URL(request.url);
-  
-  // Edge cache (bypass via ?nocache=1)
-  const edgeCache = caches.default;
-  const bypassCache = url.searchParams.get("nocache") === "1";
-  if (!bypassCache) {
-    const cached = await edgeCache.match(request);
-    if (cached) return cached;
-  }
-  
-  // ---------- Config (orientation locked lenient)
-  const relaxHosts = (url.searchParams.get("hostMode") || String(env?.HOST_MODE || "")).toLowerCase() === "relaxed";
-  const durationMode = (url.searchParams.get("durationMode") || String(env?.DURATION_MODE || "normal")).toLowerCase(); // "normal" | "lenient"
-  
-  // Secondary hosts via env (comma-separated)
-  const SECONDARY_HOSTS = String(env?.SECONDARY_HOSTS || "")
-    .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-  
-  // Create host sets
-  const PREF_BASE = [...FREE_HOSTS, ...(relaxHosts ? SECONDARY_HOSTS : [])];
-  const SOFT_BASE = [...SOFT_ALLOW_HOSTS, ...(relaxHosts ? SECONDARY_HOSTS : [])];
-  const PREFERRED_HOSTS = new Set(PREF_BASE.flatMap(h => [h, `www.${h}`]));
-  const SOFT_ALLOW = new Set(SOFT_BASE.flatMap(h => [h, `www.${h}`]));
-  
-  const ALLOWED_FALLBACK = new Set([
-    ...Array.from(PREFERRED_HOSTS),
-    ...Array.from(SOFT_ALLOW),
-    "reddit.com", "www.reddit.com",
-    "archive.org", "www.archive.org", "archive.ph", "www.archive.ph"
-  ]);
-  
-  if (relaxHosts) {
-    for (const h of SECONDARY_HOSTS) {
-      ALLOWED_FALLBACK.add(h);
-      ALLOWED_FALLBACK.add(`www.${h}`);
-    }
-  }
-  
-  // Params
-  const qRaw = (url.searchParams.get("q") || "").trim();
-  if (!qRaw) return jerr("missing query", 400);
-  const q = qRaw.length > 500 ? qRaw.slice(0, 500) : qRaw;
-  let limit = clampInt(url.searchParams.get("limit"), 10, 3, 20);
-  const durationQuery = (url.searchParams.get("duration") || "").trim() || null;
-  let freshness = (url.searchParams.get("fresh") || "y1").trim().toLowerCase();
-  if (!FRESH_OK.has(freshness)) freshness = "y1";
-  const rawSite = (url.searchParams.get("site") || "").trim();
-  let siteQuery = sanitizeSiteParam(rawSite) || null;
-  let searchMode = (url.searchParams.get("mode") || "").trim().toLowerCase() || null;
-  if (!searchMode) searchMode = "niche";
-  if (siteQuery && /[\s"]/g.test(siteQuery)) siteQuery = null;
-  const DEBUG = url.searchParams.get("debug") === "1" || String(env?.DEBUG || "").toLowerCase() === "true";
-  
-  // Analytics tracking
-  const requestId = url.searchParams.get("reqId") || crypto.randomUUID();
-  
-  // Diagnostics
-  let fetched_total = 0, dropped_paywall = 0, dropped_dead = 0;
-  let dropped_forbidden = 0, dropped_removed = 0;
-  let dropped_not_video = 0, dropped_fallback_not_video = 0, dropped_orientation = 0;
-  const errorLog = [];
-  
-  const wantRange = parseDurationQuery(durationQuery);
-  
-  try {
-    // Initialize the multi-provider search service
-    const searchService = new SearchService(env);
-    
-    // Create appropriate query based on search mode
-    let enhancedQuery = q;
-    if (searchMode === 'niche') {
-      enhancedQuery += ' "gay porn"';
-    } else if (searchMode === 'keywords') {
-      enhancedQuery += ' "gay porn" OR "gay video" OR "homo video"';
-    } else if (searchMode === 'deep_niche') {
-      enhancedQuery += ' "amateur homo" OR "gay male amateur"';
-    } else if (searchMode === 'forums') {
-      enhancedQuery += ' gay OR homo OR male site:forum.* OR site:reddit.com';
-    } else if (searchMode === 'tumblrish') {
-      enhancedQuery += ' gay OR homo OR male site:tumblr.com OR site:blogspot.com';
-    }
-    
-    // Add site restriction if specified
-    if (siteQuery) {
-      enhancedQuery += ` site:${siteQuery}`;
-    }
-    
-    // Search options
-    const searchOptions = {
-      limit: limit * 2, // Request more results to allow for filtering
-      fresh: freshness,
-      site: siteQuery,
-      country: 'us',
-      language: 'en',
-      mode: searchMode
-    };
-    
-    // Perform search with automatic provider fallback
-    const searchResult = await searchService.search(enhancedQuery, searchOptions);
-    
-    if (!searchResult.success) {
-      return jerr(searchResult.error || "search failed", 500);
-    }
-    
-    // Process results
-    fetched_total = searchResult.results.length;
-    let candidates = searchResult.results.map(result => ({
-      source: result.provider,
-      title: neutralizeTitle(result.title || ""),
-      site: result.site || "",
-      url: result.url || "",
-      runtimeSec: result.runtimeSec,
-      thumbnail: result.thumbnail,
-      tags: result.tags || [],
-      notes: result.notes || "search result"
-    })).filter(it => !!it.url);
-    
-    // Analyze candidates
-    const nonForumIdx = candidates.map((it, idx) => ({ it, idx })).filter(x => x.it.source !== "forum");
-    const analyses = await poolMap(nonForumIdx, async ({ it }) => getPlayableMeta(it.url), 6);
-    const analysisByUrl = new Map();
-    nonForumIdx.forEach((x, k) => {
-      analysisByUrl.set(normUrl(x.it.url), analyses[k]);
-    });
-    
-    // Selection
-    const kept = [];
-    for (let idx = 0; idx < candidates.length; idx++) {
-      if (kept.length >= limit) break;
-      const it = candidates[idx];
-      if (!it?.url) {
-        dropped_dead++;
-        continue;
-      }
-      
-      // Forums (title-only gay cue)
-      if (it.source === "forum") {
-        if (!gayOnlyPass(it.title, "", it.site)) {
-          dropped_orientation++;
-          continue;
-        }
-        kept.push({
-          ...it,
-          score: 85 + (it.url.includes("2024") || it.url.includes("2025") ? 10 : 0)
-        });
-        continue;
-      }
-      
-      // Page analysis
-      const lc = analysisByUrl.get(normUrl(it.url));
-      
-      // Listing harvest injection
-      if (lc?.harvested?.length) {
-        for (const u of lc.harvested) {
-          candidates.unshift({
-            source: it.source,
-            title: it.title,
-            site: safeHost(u),
-            url: u,
-            runtimeSec: null,
-            thumbnail: it.thumbnail || null,
-            tags: it.tags || [],
-            notes: (it.notes ? it.notes + "; " : "") + "harvested"
-          });
-        }
-        continue;
-      }
-      
-      // Drop obvious paywalls/forbidden
-      const host = (it.site || "").toLowerCase();
-      if (KNOWN_PAYWALL.has(host)) {
-        dropped_paywall++;
-        continue;
-      }
-      if (BAD_PATH_HINTS.some(h => it.url.toLowerCase().includes(h))) {
-        dropped_paywall++;
-        continue;
-      }
-      
-      // Avoid listing/search pages unless already harvested above
-      if (looksLikeSearchUrl(it.url)) {
-        dropped_dead++;
-        continue;
-      }
-      
-      // Orientation fallback: if page text failed, try title-only
-      if (lc?.orientationFail && !gayOnlyPass(it.title, "", host)) {
-        dropped_orientation++;
-        continue;
-      }
-      
-      // Must be playable OR look like a direct video URL
-      if (!lc || !(lc.playable || looksLikeVideoUrl(it.url))) {
-        if ((PREFERRED_HOSTS.has(host) || SOFT_ALLOW.has(host)) && gayOnlyPass(it.title, "", host)) {
-          const rs = it.runtimeSec ?? lc?.duration ?? null;
-          kept.push({
-            ...it,
-            title: neutralizeTitle(it.title),
-            site: host,
-            url: lc?.url ? normUrl(lc.url) : it.url,
-            runtimeSec: rs,
-            thumbnail: lc?.thumbnail || it?.thumbnail || null,
-            notes: (it.notes ? it.notes + "; " : "") + "salvage-low",
-            score: (PREFERRED_HOSTS.has(host) ? 80 : 60) - 10
-          });
-          continue;
-        }
-        dropped_not_video++;
-        continue;
-      }
-      
-      const runtimeSec = it.runtimeSec ?? lc.duration ?? null;
-      if (!fitsDuration(runtimeSec, wantRange, host, durationMode)) continue;
-      
-      const recentBoost = it.url.includes("2024") || it.url.includes("2025");
-      let score = PREFERRED_HOSTS.has(host) ? 100 : (SOFT_ALLOW.has(host) ? 75 : 40);
-      if (recentBoost) score += 10;
-      if (runtimeSec != null) score += 5;
-      score += titleRelevanceBonus(q, it.title);
-      if (looksLikeVideoUrl(it.url)) score += 50;
-      if (looksLikeSearchUrl(it.url)) score -= 50;
-      
-      kept.push({
-        ...it,
-        title: neutralizeTitle(it.title),
-        url: lc?.url ? normUrl(lc.url) : it.url,
-        site: host,
-        runtimeSec,
-        thumbnail: lc?.thumbnail || it?.thumbnail || null,
-        score
-      });
-    }
-    
-    // Secondary pass if nothing yet
-    if (kept.length === 0) {
-      for (const it of candidates) {
-        if (kept.length >= limit) break;
-        if (!it?.url) {
-          dropped_dead++;
-          continue;
-        }
-        if (it.source === "forum") {
-          if (!gayOnlyPass(it.title, "", it.site)) {
-            dropped_orientation++;
-            continue;
-          }
-          kept.push({
-            ...it,
-            title: neutralizeTitle(it.title),
-            url: it.url,
-            site: it.site || "reddit.com",
-            runtimeSec: null,
-            thumbnail: null,
-            notes: (it.notes ? it.notes + "; " : "") + "second-pass",
-            score: 85 + (it.url.includes("2024") || it.url.includes("2025") ? 10 : 0)
-          });
-          continue;
-        }
-        if (looksLikeSearchUrl(it.url)) {
-          dropped_dead++;
-          continue;
-        }
-        const host = (it.site || "").toLowerCase();
-        if (KNOWN_PAYWALL.has(host)) {
-          dropped_paywall++;
-          continue;
-        }
-        const lc = analysisByUrl.get(normUrl(it.url));
-        if (!lc || !(lc.playable || looksLikeVideoUrl(it.url))) {
-          dropped_fallback_not_video++;
-          continue;
-        }
-        
-        const recentBoost = it.url.includes("2024") || it.url.includes("2025");
-        let score = PREFERRED_HOSTS.has(host) ? 100 : (SOFT_ALLOW.has(host) ? 75 : 40);
-        if (recentBoost) score += 10;
-        
-        const rs = it.runtimeSec ?? lc.duration;
-        if (rs != null) score += 5;
-        score += titleRelevanceBonus(q, it.title);
-        if (looksLikeVideoUrl(it.url)) score += 50;
-        if (looksLikeSearchUrl(it.url)) score -= 50;
-        
-        kept.push({
-          ...it,
-          title: neutralizeTitle(it.title),
-          url: lc?.url ? normUrl(lc.url) : it.url,
-          site: host,
-          runtimeSec: rs ?? null,
-          thumbnail: lc?.thumbnail || it?.thumbnail || null,
-          notes: (it.notes ? it.notes + "; " : "") + "second-pass",
-          score
-        });
-      }
-    }
-    
-    // Adaptive limit lift if underfilled
-    if (kept.length < Math.min(6, limit) && limit < 20) {
-      limit = 20;
-    }
-    
-    // Build results
-    const results = kept
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, limit)
-      .map(it => ({
-        title: it.title,
-        site: it.site,
-        url: it.url,
-        runtime: it.runtimeSec != null ? fmtMMSS(it.runtimeSec) : "—",
-        thumbnail: it.thumbnail || null,
-        tags: it.tags && it.tags.length ? it.tags : [],
-        notes: it.notes || (it.source === "forum" ? "discussion thread (links inside)" : "search result")
-      }));
-    
-    // HARD FALLBACK (allowed hosts + reddit/archive)
-    let finalResults = results;
-    let fallback_used = false;
-    if (finalResults.length === 0) {
-      const raw = candidates
-        .filter(it => it.url && ALLOWED_FALLBACK.has((it.site || "").toLowerCase()))
-        .map(it => {
-          const recentBoost = it.url.includes("2024") || it.url.includes("2025");
-          const score = (PREFERRED_HOSTS.has(it.site) ? 100 : (SOFT_ALLOW.has(it.site) ? 75 : 40))
-            + (recentBoost ? 10 : 0)
-            + titleRelevanceBonus(q, it.title);
-          return { ...it, title: neutralizeTitle(it.title), score };
-        })
-        .sort((a, b) => (b.score || 0) - (a.score || 0))
-        .slice(0, limit);
-        
-      finalResults = raw.map(it => ({
-        title: it.title,
-        site: it.site,
-        url: it.url,
-        runtime: it.runtimeSec != null ? fmtMMSS(it.runtimeSec) : "—",
-        thumbnail: it.thumbnail || null,
-        tags: it.tags && it.tags.length ? it.tags : [],
-        notes: (it.notes ? it.notes + "; " : "") + "raw-fallback"
-      }));
-      fallback_used = true;
-    }
-    
-    const diag = {
-      fetched_total,
-      provider: searchResult.metadata.provider,
-      kept: finalResults.length,
-      dropped_paywall, dropped_dead, dropped_forbidden, dropped_removed,
-      dropped_not_video, dropped_fallback_not_video,
-      dropped_orientation,
-      fallback_used,
-      relaxHosts, durationMode, freshness,
-      requestId,
-      errors: errorLog
-    };
-    
-    const payload = {
-      query: q,
-      site: siteQuery,
-      mode: searchMode,
-      durationQuery,
-      freshness,
-      results: finalResults,
-      diag: DEBUG ? diag : undefined
-    };
-    
-    const res = jok(payload);
-    if (!bypassCache) ctx.waitUntil(edgeCache.put(request, res.clone()));
-    return res;
-  } catch (error) {
-    console.error(`[handleAggregate] Error: ${error.message}`, error.stack);
-    return jerr("an unexpected error occurred", 500);
-  }
-}
-
-// -------------------- UI Components --------------------
-// Portal HTML with enhanced UI, iOS 18 optimizations, and offline support
-const PORTAL_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Jack Portal</title>
-  <link rel="manifest" href="/manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#0b0b0c">
-  <meta name="description" content="Advanced content search interface">
-  <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
-  <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
-  <style>
-    :root {
-      --bg:#0b0b0c; --panel:#141416; --panel-2:#1a1b1e; --muted:#9aa0a6; --txt:#e9eaee;
-      --accent:#3b82f6; --accent-2:#2563eb; --ok:#22c55e; --bad:#ef4444; --radius:14px;
-      --safe-area-inset-top: env(safe-area-inset-top, 0px);
-      --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-area-inset-left: env(safe-area-inset-left, 0px);
-      --safe-area-inset-right: env(safe-area-inset-right, 0px);
-    }
-    
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0;background:var(--bg);color:var(--txt);
-      font:16px system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-      padding-top: var(--safe-area-inset-top);
-      padding-bottom: var(--safe-area-inset-bottom);
-      padding-left: var(--safe-area-inset-left);
-      padding-right: var(--safe-area-inset-right);
-    }
-    
-    /* Accessibility - Skip Link */
-    .skip-link {
-      position: absolute;
-      top: -40px;
-      left: 0;
-      background: var(--accent);
-      color: white;
-      padding: 8px;
-      z-index: 100;
-      transition: top 0.2s;
-    }
-    .skip-link:focus {
-      top: 0;
-    }
-    
-    header{
-      position:sticky;top:0;z-index:5;
-      background:#0f1012cc;backdrop-filter:saturate(120%) blur(6px);
-      padding:calc(14px + var(--safe-area-inset-top)) 16px 14px;
-      border-bottom:1px solid #1f2024;
-    }
-    
-    h1{margin:0;font-size:20px;font-weight:650}
-    
-    main{
-      padding:16px;max-width:1100px;margin:0 auto;
-      padding-left: max(16px, var(--safe-area-inset-left));
-      padding-right: max(16px, var(--safe-area-inset-right));
-    }
-    
-    .panel{background:var(--panel);border:1px solid #1f2024;border-radius:var(--radius);padding:16px}
-    .title{font-weight:700;font-size:22px;margin:0 0 10px}
-    
-    .row{display:grid;gap:16px;grid-template-columns:1fr 1fr}
-    @media (max-width:720px){.row{grid-template-columns:1fr}}
-    
-    .row-2{display:grid;gap:12px;grid-template-columns:1fr 1fr}
-    @media (max-width:720px){.row-2{grid-template-columns:1fr}}
-    
-    label{display:block;margin:8px 0 6px;color:var(--muted);font-size:13px}
-    
-    input[type="text"], input[type="number"], select{
-      width:100%;padding:12px 12px;border-radius:10px;
-      border:1px solid #23252b;background:var(--panel-2);
-      color:var(--txt);outline:none;font-size: 16px;
-      min-height: 44px;
-    }
-    
-    input::placeholder{color:#6b7280}
-    
-    .search-form {
-      position: relative;
-    }
-    
-    .search-clear {
-      position: absolute;
-      right: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      color: var(--muted);
-      font-size: 16px;
-      padding: 8px;
-      cursor: pointer;
-      display: none;
-    }
-    
-    .voice-search {
-      position: absolute;
-      right: 46px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      background: transparent;
-    border: none;
-    color: var(
-.voice-search {
-      position: absolute;
-      right: 46px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      color: var(--muted);
-      font-size: 18px;
-      padding: 8px;
-      cursor: pointer;
-      z-index: 2;
-    }
-    
-    .voice-search.listening {
-      color: #ef4444;
-      animation: pulse 1.5s infinite;
-    }
-    
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.6; }
-      100% { opacity: 1; }
-    }
-    
-    .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
-    
-    .chip{
-      padding:8px 12px;border-radius:999px;background:#1f2126;
-      border:1px solid #262a31;color:#cfd3da;cursor:pointer;font-size:13px;
-      min-height: 36px;
-      display: inline-flex;
-      align-items: center;
-      user-select: none;
-    }
-    
-    .chip.active{background:#1f3b8a;border-color:#2147a8;color:#fff}
-    
-    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-    
-    button{
-      appearance:none;border:0;border-radius:10px;background:var(--accent);
-      color:#fff;padding:12px 16px;font-weight:600;cursor:pointer;
-      min-height: 44px;
-    }
-    
-    button.secondary{background:#20242b;color:#d9dce3;border:1px solid #2a2e36}
-    button.ghost{background:transparent;border:1px dashed #2f3540;color:#9aa0a6}
-    
-    .muted{color:var(--muted);font-size:13px}
-    
-    .grid{
-      display:grid;gap:14px;
-      grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
-      margin-top:16px;
-    }
-    
-    .card{
-      background:var(--panel-2);border:1px solid #22252b;
-      border-radius:12px;padding:12px;display:flex;
-      flex-direction:column;gap:8px;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
-    }
-    
-    .card.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    
-    .card:active {
-      transform: scale(0.98);
-    }
-    
-    .thumb{
-      width:100%;aspect-ratio:16/9;object-fit:cover;
-      border-radius:8px;background:#0d0e11;
-    }
-    
-    .meta{color:var(--muted);font-size:13px}
-    
-    a.link{color:#9cc4ff;text-decoration:none}
-    a.link:hover{text-decoration:underline}
-    
-    .status{
-      position:sticky;bottom:0;margin-top:18px;
-      text-align:right;color:var(--muted);font-size:12px;
-      padding-bottom: var(--safe-area-inset-bottom);
-    }
-    
-    .debug{
-      white-space:pre-wrap;background:#0f1115;
-      border:1px solid #23262d;padding:10px;border-radius:10px;
-      font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px;
-      display:none;
-    }
-    
-    .debug.show{display:block}
-    
-    /* iOS optimizations */
-    @media (hover: hover) {
-      .card:hover {
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-        transform: translateY(-2px);
-      }
-      
-      button:hover {
-        opacity: 0.9;
-      }
-    }
-
-    /* Enhanced components */
-    .search-indicators {
-      margin-top: 15px;
-      padding: 12px;
-      background: var(--panel-2);
-      border-radius: var(--radius);
-      border: 1px solid #1f2024;
-      display: none;
-    }
-    
-    .search-indicators.active {
-      display: block;
-    }
-    
-    .progress {
-      height: 4px;
-      width: 100%;
-      background: var(--panel-2);
-      border-radius: 2px;
-      overflow: hidden;
-      margin-top: 8px;
-    }
-    
-    .progress-bar {
-      height: 100%;
-      width: 0%;
-      background: var(--accent);
-      transition: width 0.3s ease;
-    }
-    
-    .error-message {
-      color: var(--bad);
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      padding: 10px 14px;
-      border-radius: 8px;
-      margin: 10px 0;
-      font-size: 14px;
-      display: none;
-    }
-    
-    .error-message.show {
-      display: block;
-      animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
-    }
-    
-    @keyframes shake {
-      10%, 90% { transform: translate3d(-1px, 0, 0); }
-      20%, 80% { transform: translate3d(2px, 0, 0); }
-      30%, 50%, 70% { transform: translate3d(-2px, 0, 0); }
-      40%, 60% { transform: translate3d(2px, 0, 0); }
-    }
-    
-    .recent-searches {
-      margin-top: 15px;
-      display: none;
-    }
-    
-    .recent-searches.show {
-      display: block;
-    }
-    
-    /* Loading skeletons */
-    .skeleton {
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .skeleton::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      transform: translateX(-100%);
-      background-image: linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0) 0,
-        rgba(255, 255, 255, 0.05) 20%,
-        rgba(255, 255, 255, 0.1) 60%,
-        rgba(255, 255, 255, 0)
-      );
-      animation: shimmer 2s infinite;
-    }
-    
-    @keyframes shimmer {
-      100% {
-        transform: translateX(100%);
-      }
-    }
-    
-    .skeleton-thumb {
-      width: 100%;
-      aspect-ratio: 16/9;
-      background: #1a1b1d;
-      border-radius: 8px;
-      margin-bottom: 10px;
-    }
-    
-    .skeleton-title {
-      height: 20px;
-      background: #1a1b1d;
-      border-radius: 4px;
-      margin-bottom: 8px;
-    }
-    
-    .skeleton-meta {
-      height: 14px;
-      background: #1a1b1d;
-      border-radius: 4px;
-      margin-bottom: 8px;
-      width: 70%;
-    }
-    
-    .skeleton-link {
-      height: 14px;
-      background: #1a1b1d;
-      border-radius: 4px;
-      width: 40%;
-    }
-
-    /* Offline indicators */
-    .offline-banner {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: rgba(239, 68, 68, 0.1);
-      color: var(--bad);
-      padding: 10px;
-      border-radius: 8px;
-      margin-bottom: 15px;
-      font-size: 14px;
-    }
-    
-    .offline-search-item {
-      background: var(--panel);
-      border-radius: var(--radius);
-      padding: 15px;
-      margin-bottom: 15px;
-    }
-    
-    .offline-results-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-      gap: 10px;
-      margin: 10px 0;
-    }
-    
-    .offline-timestamp {
-      font-size: 12px;
-      color: var(--muted);
-      text-align: right;
-    }
-    
-    .toast {
-      position: fixed;
-      bottom: calc(20px + var(--safe-area-inset-bottom));
-      left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 14px;
-      z-index: 9999;
-      opacity: 0;
-      transition: transform 0.3s, opacity 0.3s;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-    
-    .online-toast {
-      background: rgba(34, 197, 94, 0.9);
-    }
-    
-    .offline-toast {
-      background: rgba(239, 68, 68, 0.9);
-    }
-    
-    /* iOS-specific dark mode */
-    @media (prefers-color-scheme: dark) {
-      :root {
-        color-scheme: dark;
-        --bg: #000000;
-        --panel: #1a1a1c;
-        --panel-2: #2a2a2c;
-        --muted: #8a8a91;
-        --txt: #ffffff;
-      }
-      
-      header {
-        background: rgba(0, 0, 0, 0.8);
-      }
-      
-      .card {
-        background: var(--panel);
-        border-color: #2a2a2e;
-      }
-    }
-    
-    /* iOS reduced transparency */
-    @media (prefers-reduced-transparency: reduce) {
-      header {
-        background: var(--bg);
-        backdrop-filter: none;
-      }
-    }
-    
-    /* Better mobile action buttons */
-    @media (max-width: 480px) {
-      .actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-      }
-      
-      button {
-        width: 100%;
-      }
-    }
-    
-    /* Version info */
-    .app-footer {
-      padding: 15px;
-      margin-top: 30px;
-      text-align: center;
-      border-top: 1px solid #1f2024;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    
-    .version-info {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 10px;
-    }
-    
-    .update-check {
-      background: transparent;
-      border: none;
-      color: var(--accent);
-      font-size: 12px;
-      padding: 4px 8px;
-      cursor: pointer;
-      min-height: auto;
-    }
-    
-    /* Update notification */
-    .update-notification {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    
-    .update-card {
-      background: var(--panel);
-      border-radius: var(--radius);
-      padding: 20px;
-      max-width: 400px;
-      width: 100%;
-    }
-    
-    .update-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-    }
-    
-    .update-button {
-      flex: 1;
-    }
-    
-    .update-later {
-      flex: 1;
-      background: transparent;
-      border: 1px solid #2a2e36;
-      color: var(--muted);
-    }
-    
-    /* Dynamic Island spacing for iOS */
-    .dynamic-island-spacer {
-      height: 32px;
-      width: 100%;
-    }
-    
-    body.ios18 .has-dynamic-island {
-      --dynamic-island-spacing: 32px;
-    }
-  </style>
-</head>
-<body>
-  <a href="#main" class="skip-link">Skip to content</a>
-  <header role="banner">
-    <h1>Jack Portal</h1>
-  </header>
-  <main id="main" role="main">
-    <div class="panel">
-      <div class="title">Search</div>
-      <form id="searchForm" role="search">
-        <div class="search-form">
-          <label for="q">Search Query</label>
-          <input type="text" id="q" name="q" placeholder="Enter search terms..." aria-label="Search query">
-        </div>
-        <div class="row">
-          <div>
-            <label for="modeSel">Search Mode</label>
-            <select id="modeSel" aria-label="Search mode">
-              <option value="niche">Niche</option>
-              <option value="keywords">Keywords</option>
-              <option value="deep_niche">Deep Niche</option>
-              <option value="forums">Forums</option>
-              <option value="tumblrish">Tumblr-like</option>
-            </select>
-            <div id="modeChips" class="chips" role="radiogroup" aria-label="Search mode selection">
-              <div class="chip active" data-mode="niche" role="radio" tabindex="0" aria-checked="true">Niche</div>
-              <div class="chip" data-mode="keywords" role="radio" tabindex="0" aria-checked="false">Keywords</div>
-              <div class="chip" data-mode="deep_niche" role="radio" tabindex="0" aria-checked="false">Deep Niche</div>
-              <div class="chip" data-mode="forums" role="radio" tabindex="0" aria-checked="false">Forums</div>
-              <div class="chip" data-mode="tumblrish" role="radio" tabindex="0" aria-checked="false">Tumblr-like</div>
-            </div>
-          </div>
-          <div>
-            <div class="row-2">
-              <div>
-                <label for="freshSel">Freshness</label>
-                <select id="freshSel" aria-label="Content freshness">
-                  <option value="d7">7 days</option>
-                  <option value="m1">1 month</option>
-                  <option value="m3">3 months</option>
-                  <option value="y1">1 year</option>
-                  <option value="all">All time</option>
-                </select>
-              </div>
-              <div>
-                <label for="limit">Results</label>
-                <input type="number" id="limit" value="10" min="3" max="20" aria-label="Number of results">
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label for="duration">Duration (optional)</label>
-            <input type="text" id="duration" placeholder="e.g. 5-10m, <5m, 7:30..." aria-label="Content duration">
-          </div>
-          <div>
-            <label for="site">Site (optional)</label>
-            <input type="text" id="site" placeholder="e.g. example.com" aria-label="Limit to specific site">
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label for="hostModeSel">Host Mode</label>
-            <select id="hostModeSel" aria-label="Host mode">
-              <option value="normal">Normal</option>
-              <option value="relaxed">Relaxed</option>
-            </select>
-          </div>
-          <div>
-            <label for="durationModeSel">Duration Mode</label>
-            <select id="durationModeSel" aria-label="Duration mode">
-              <option value="normal">Normal</option>
-              <option value="lenient">Lenient</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label for="showThumbs">
-            <input type="checkbox" id="showThumbs" checked> Show thumbnails
-          </label>
-        </div>
-        <div id="error-container" class="error-message" aria-live="assertive"></div>
-        <div id="search-progress" class="search-indicators">
-          <div class="progress">
-            <div id="progress-bar" class="progress-bar"></div>
-          </div>
-        </div>
-        <div id="recent-searches" class="recent-searches">
-          <label>Recent Searches</label>
-          <div id="recent-searches-chips" class="chips"></div>
-        </div>
-        <div class="actions">
-          <button type="submit" id="goBtn">Search</button>
-          <button type="button" id="copyBtn" class="secondary">Copy Results</button>
-          <button type="button" id="saveBtn" class="secondary">Save Defaults</button>
-          <button type="button" id="resetBtn" class="secondary">Reset</button>
-          <button type="button" id="dbgBtn" class="ghost">Debug</button>
-        </div>
-      </form>
-    </div>
-    <div id="results" class="grid" aria-live="polite"></div>
-    <div id="status" class="status">idle</div>
-    <div id="debug" class="debug"></div>
-  </main>
-  <footer class="app-footer">
-    <div class="version-info">
-      <span>Jack Portal v${APP_VERSION} (${BUILD_DATE})</span>
-      <button id="checkUpdates" class="update-check">Check for updates</button>
-    </div>
-  </footer>
-
-<script>
-// -------------------- Client-Side JavaScript --------------------
-// iOS-specific optimizations
-const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-const isIOS18 = isIOS && (/OS 18/.test(navigator.userAgent) || /Version\/18/.test(navigator.userAgent));
-const hasDynamicIsland = isIOS && /iPhone/.test(navigator.userAgent) && window.devicePixelRatio >= 3;
-
-// Apply iOS-specific optimizations
-if (isIOS) {
-  document.body.classList.add('ios');
-  
-  // Additional iOS 18 optimizations
-  if (isIOS18) {
-    document.body.classList.add('ios18');
-    
-    // Dynamic Island awareness
-    if (hasDynamicIsland && window.matchMedia('(display-mode: standalone)').matches) {
-      document.body.classList.add('has-dynamic-island');
-      const spacer = document.createElement('div');
-      spacer.className = 'dynamic-island-spacer';
-      document.body.insertBefore(spacer, document.body.firstChild);
-    }
-    
-    // Better backdrop filters
-    const header = document.querySelector('header');
-    if (header) {
-      header.style.backdropFilter = 'saturate(120%) blur(10px)';
-      header.style.webkitBackdropFilter = 'saturate(120%) blur(10px)';
-    }
-  }
-  
-  // Add viewport-fit=cover for notched devices
-  const metaViewport = document.querySelector('meta[name="viewport"]');
-  if (metaViewport && !metaViewport.content.includes('viewport-fit=cover')) {
-    metaViewport.content += ', viewport-fit=cover';
-  }
-  
-  // Fix 100vh issue on iOS
-  const fixHeight = () => {
-    document.documentElement.style.setProperty('--real-height', \`\${window.innerHeight}px\`);
-  };
-  window.addEventListener('resize', fixHeight);
-  window.addEventListener('orientationchange', fixHeight);
-  fixHeight();
-}
-
-// UI element references
-const API_BASE = '/aggregate';
-const qEl = document.getElementById("q");
-const modeSel = document.getElementById("modeSel");
-const freshSel = document.getElementById("freshSel");
-const limitEl = document.getElementById("limit");
-const durationEl = document.getElementById("duration");
-const siteEl = document.getElementById("site");
-const hostModeSel = document.getElementById("hostModeSel");
-const durationModeSel = document.getElementById("durationModeSel");
-const showThumbsEl = document.getElementById("showThumbs");
-const resultsEl = document.getElementById("results");
-const statusEl = document.getElementById("status");
-const debugEl = document.getElementById("debug");
-const goBtn = document.getElementById("goBtn");
-const copyBtn = document.getElementById("copyBtn");
-const dbgBtn = document.getElementById("dbgBtn");
-const saveBtn = document.getElementById("saveBtn");
-const resetBtn = document.getElementById("resetBtn");
-const modeChips = document.getElementById("modeChips");
-const errorContainer = document.getElementById("error-container");
-const searchProgress = document.getElementById("search-progress");
-const progressBar = document.getElementById("progress-bar");
-const recentSearchesEl = document.getElementById("recent-searches");
-const recentSearchesChips = document.getElementById("recent-searches-chips");
-
-// Helper functions
-function setStatus(s) { 
-  statusEl.textContent = s;
-}
-
-function chipSync(mode) {
-  [...modeChips.querySelectorAll(".chip")].forEach(c => {
-    const isActive = c.dataset.mode === mode;
-    c.classList.toggle("active", isActive);
-    c.setAttribute('aria-checked', isActive.toString());
-  });
-  modeSel.value = mode;
-}
-
-function buildUrl() {
-  const p = new URLSearchParams();
-  p.set("q", qEl.value.trim());
-  p.set("mode", modeSel.value || "niche");
-  p.set("fresh", freshSel.value || "all");
-  p.set("limit", Math.max(3, Math.min(20, parseInt(limitEl.value || "20", 10))));
-  const dur = durationEl.value.trim(); if (dur) p.set("duration", dur);
-  const site = siteEl.value.trim(); if (site) p.set("site", site);
-  p.set("hostMode", hostModeSel.value || "normal");
-  p.set("durationMode", durationModeSel.value || "normal");
-  p.set("nocache", "1"); // always bypass cache for live tests
-  p.set("reqId", crypto.randomUUID()); // Unique request ID
-  return API_BASE + "?" + p.toString();
-}
-
-// Enhanced card rendering with lazy loading support
-function cardHtml(item, showThumb) {
-  const t = item.title || "clip";
-  const site = item.site || "";
-  const rt = item.runtime || "—";
-  const url = item.url || "#";
-  const thumb = item.thumbnail || item.thumb || "";
-  
-  let html = '<div class="card">';
-  if (showThumb && thumb) {
-    html += \`<img class="thumb" data-src="\${thumb}" alt="" loading="lazy">\`;
-  }
-  html += \`<div style="font-weight:700">\${t}</div>\`;
-  html += \`<div class="meta"><strong>Site:</strong> \${site} &nbsp; • &nbsp; <strong>Runtime:</strong> \${rt}</div>\`;
-  html += \`<div><a class="link" href="\${url}" target="_blank" rel="noopener noreferrer">View Content</a></div>\`;
-  html += '</div>';
-  
-  return html;
-}
-
-// Render loading skeletons for better perceived performance
-function renderLoadingSkeleton(count = 3) {
-  const html = Array(count).fill(\`
-    <div class="card skeleton">
-      <div class="skeleton-thumb"></div>
-      <div class="skeleton-title"></div>
-      <div class="skeleton-meta"></div>
-      <div class="skeleton-link"></div>
-    </div>
-  \`).join('');
-  
-  resultsEl.innerHTML = html;
-}
-
-// Enhanced result rendering with lazy loading
-function render(items) {
-  resultsEl.innerHTML = (items || []).map(it => cardHtml(it, showThumbsEl.checked)).join("");
-  
-  // Initialize lazy loading with Intersection Observer
-  if ('IntersectionObserver' in window) {
-    const cardObserver = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const card = entry.target;
-          
-          // Lazy load thumbnail if available
-          const thumb = card.querySelector('img.thumb[data-src]');
-          if (thumb) {
-            thumb.src = thumb.dataset.src;
-            thumb.removeAttribute('data-src');
-          }
-          
-          // Add animation
-          card.classList.add('visible');
-          
-          // Stop observing once loaded
-          cardObserver.unobserve(card);
-        }
-      });
-    }, {
-      rootMargin: '100px 0px',
-      threshold: 0.1
-    });
-    
-    // Observe all cards
-    document.querySelectorAll('.card').forEach(card => {
-      cardObserver.observe(card);
-    });
-  }
-}
-
-// Persistence functions
-function saveDefaults() {
-  const obj = {
-    fresh: freshSel.value,
-    limit: limitEl.value,
-    showThumbs: showThumbsEl.checked,
-    mode: modeSel.value,
-    hostMode: hostModeSel.value,
-    durationMode: durationModeSel.value
-  };
-  try {
-    localStorage.setItem("jack.defaults", JSON.stringify(obj));
-  } catch (e) {
-    console.error("Failed to save defaults:", e);
-  }
-}
-
-function loadDefaults() {
-  try {
-    const s = localStorage.getItem("jack.defaults");
-    if (!s) return;
-    const d = JSON.parse(s);
-    if (d.fresh) freshSel.value = d.fresh;
-    if (d.limit) limitEl.value = d.limit;
-    if (typeof d.showThumbs === "boolean") showThumbsEl.checked = d.showThumbs;
-    if (d.mode) {
-      modeSel.value = d.mode;
-      chipSync(d.mode);
-    }
-    if (d.hostMode) hostModeSel.value = d.hostMode;
-    if (d.durationMode) durationModeSel.value = d.durationMode;
-  } catch (e) {
-    console.error("Failed to load defaults:", e);
-  }
-}
-
-// Recent searches management
-function saveRecentSearch(query) {
-  if (!query.trim()) return;
-  
-  try {
-    const searches = JSON.parse(localStorage.getItem('jack.recent-searches') || '[]');
-    
-    // Remove if already exists
-    const index = searches.indexOf(query);
-    if (index !== -1) {
-      searches.splice(index, 1);
-    }
-    
-    // Add to beginning
-    searches.unshift(query);
-    
-    // Keep only 5 most recent
-    const updated = searches.slice(0, 5);
-    
-    localStorage.setItem('jack.recent-searches', JSON.stringify(updated));
-    renderRecentSearches();
-  } catch (e) {
-    console.error('Failed to save recent search:', e);
-  }
-}
-
-function renderRecentSearches() {
-  try {
-    const searches = JSON.parse(localStorage.getItem('jack.recent-searches') || '[]');
-    
-    if (searches.length === 0) {
-      recentSearchesEl.style.display = 'none';
-      return;
-    }
-    
-    recentSearchesEl.style.display = 'block';
-    recentSearchesChips.innerHTML = '';
-    
-    searches.forEach(search => {
-      const chip = document.createElement('div');
-      chip.className = 'chip';
-      chip.textContent = search;
-      chip.addEventListener('click', () => {
-        qEl.value = search;
-        document.getElementById('searchForm').dispatchEvent(new Event('submit'));
-      });
-      recentSearchesChips.appendChild(chip);
-    });
-  } catch (e) {
-    console.error('Failed to load recent searches:', e);
-  }
-}
-
-// Error handling
-function showError(message) {
-  errorContainer.textContent = message;
-  errorContainer.classList.add("show");
-  
-  // Automatically hide after 5 seconds
-  setTimeout(() => {
-    errorContainer.classList.remove("show");
-  }, 5000);
-}
-
-function clearError() {
-  errorContainer.textContent = "";
-  errorContainer.classList.remove("show");
-}
-
-// Progress bar
-function startProgress() {
-  searchProgress.classList.add("active");
-  let progress = 0;
-  const interval = setInterval(() => {
-    progress += 5;
-    progressBar.style.width = progress + "%";
-    if (progress > 90) {
-      clearInterval(interval);
-    }
-  }, 150);
-  
-  return interval;
-}
-
-function completeProgress(interval) {
-  clearInterval(interval);
-  progressBar.style.width = "100%";
-  setTimeout(() => {
-    searchProgress.classList.remove("active");
-    progressBar.style.width = "0%";
-  }, 500);
-}
-
-// Enhanced fetch with retry and error handling
-async function fetchWithRetry(url, options = {}, retries = 2) {
-  try {
-    const response = await fetch(url, {
-      ...options,
-      cache: "no-store"
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      try {
-        const errorData = JSON.parse(errorText);
-        throw new Error(errorData.error || \`HTTP \${response.status}\`);
-      } catch (e) {
-        if (e instanceof SyntaxError) {
-          throw new Error(\`HTTP \${response.status}: \${errorText.slice(0, 100)}\`);
-        }
-        throw e;
-      }
-    }
-    
-    return response;
-  } catch (error) {
-    if (retries > 0 && (error.message.includes('timeout') || error.message.includes('network'))) {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      return fetchWithRetry(url, options, retries - 1);
-    }
-    throw error;
-  }
-}
-
-// Toast notifications
-function showToast(message, type = '') {
-  // Remove any existing toasts
-  document.querySelectorAll('.toast').forEach(t => t.remove());
-  
-  const toast = document.createElement('div');
-  toast.className = \`toast \${type ? \`\${type}-toast\` : ''}\`;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  
-  // Trigger reflow for animation
-  toast.offsetHeight;
-  
-  toast.classList.add('show');
-  
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-}
-
-// Check for updates
-function checkForUpdates() {
-  showToast('Checking for updates...');
-  
-  fetch('/version.json?_=' + Date.now())
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(\`Server returned \${response.status}\`);
-      }
-      return response.json();
-    })
-    .then(data => {
-      if (data.version !== '${APP_VERSION}') {
-        showUpdateNotification(data.version);
-      } else {
-        showToast('You\\'re running the latest version!');
-      }
-    })
-    .catch(error => {
-      console.error('Failed to check for updates:', error);
-      showToast('Update check failed. Please try again later.');
-    });
-}
-
-function showUpdateNotification(version) {
-  const notification = document.createElement('div');
-  notification.className = 'update-notification';
-  notification.innerHTML = \`
-    <div class="update-card">
-      <h3>Update Available</h3>
-      <p>Version \${version} is now available. You're currently on v${APP_VERSION}.</p>
-      <div class="update-actions">
-        <button id="updateNow" class="update-button">Update Now</button>
-        <button id="updateLater" class="update-later">Later</button>
-      </div>
-    </div>
-  \`;
-  
-  document.body.appendChild(notification);
-  
-  document.getElementById('updateNow').addEventListener('click', () => {
-    // Clear cache and reload
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(registrations => {
-        registrations.forEach(registration => {
-          registration.unregister();
-        });
-      });
-    }
-    
-    // Clear caches
-    if ('caches' in window) {
-      caches.keys().then(cacheNames => {
-        return Promise.all(
-          cacheNames.map(cacheName => caches.delete(cacheName))
-        );
-      });
-    }
-    
-    // Reload to get the latest version
-    window.location.reload();
-  });
-  
-  document.getElementById('updateLater').addEventListener('click', () => {
-    notification.remove();
-  });
-}
-
-// Offline support
-class OfflineManager {
-  constructor() {
-    this.isOnline = navigator.onLine;
-    this.offlineContent = [];
-    this.offlineMode = false;
-    
-    // Setup event listeners
-    window.addEventListener('online', () => this.handleConnectivityChange(true));
-    window.addEventListener('offline', () => this.handleConnectivityChange(false));
-    
-    // Initialize
-    this.init();
-  }
-  
-  async init() {
-    try {
-      // Load cached searches from localStorage
-      const searches = localStorage.getItem('jack.offline-searches');
-      if (searches) {
-        this.offlineContent = JSON.parse(searches);
-      }
-      
-      // Check if we're starting in offline mode
-      if (!this.isOnline) {
-        this.enableOfflineMode();
-      }
-    } catch (e) {
-      console.error('Failed to initialize offline manager:', e);
-    }
-  }
-  
-  handleConnectivityChange(isOnline) {
-    this.isOnline = isOnline;
-    
-    if (isOnline) {
-      this.disableOfflineMode();
-    } else {
-      this.enableOfflineMode();
-    }
-  }
-  
-  enableOfflineMode() {
-    this.offlineMode = true;
-    document.body.classList.add('offline-mode');
-    
-    // Show offline notification
-    this.showOfflineNotification();
-    
-    // Replace search with offline content
-    this.displayOfflineContent();
-  }
-  
-  disableOfflineMode() {
-    this.offlineMode = false;
-    document.body.classList.remove('offline-mode');
-    
-    // Show back online notification
-    this.showOnlineNotification();
-  }
-  
-  saveSearch(query, results) {
-    if (!this.isOnline || !results || results.length === 0) return;
-    
-    try {
-      // Load existing searches
-      const searches = JSON.parse(localStorage.getItem('jack.offline-searches') || '[]');
-      
-      // Add new search
-      searches.unshift({
-        id: crypto.randomUUID(),
-        query,
-        results,
-        timestamp: Date.now()
-      });
-      
-      // Keep only 5 most recent
-      const updated = searches.slice(0, 5);
-      
-      // Save back to localStorage
-      localStorage.setItem('jack.offline-searches', JSON.stringify(updated));
-      this.offlineContent = updated;
-    } catch (e) {
-      console.error('Failed to save search for offline use:', e);
-    }
-  }
-  
-  displayOfflineContent() {
-    if (this.offlineContent.length === 0) {
-      resultsEl.innerHTML = \`
-        <div class="offline-message" style="text-align:center;padding:20px;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 15px;display:block;color:var(--muted)">
-            <line x1="1" y1="1" x2="23" y2="23"></line>
-            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
-            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
-            <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
-            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
-            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-            <line x1="12" y1="20" x2="12.01" y2="20"></line>
-          </svg>
-          <h3>You're offline</h3>
-          <p>No saved searches available. Connect to the internet to search for content.</p>
-        </div>
-      \`;
-      return;
-    }
-    
-    // Display cached searches
-    let html = \`
-      <div class="offline-banner">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="min-width:24px">
-          <line x1="1" y1="1" x2="23" y2="23"></line>
-          <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
-          <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
-        </svg>
-        <span>You're offline. Showing saved searches.</span>
-      </div>
-    \`;
-    
-    this.offlineContent.forEach(item => {
-      html += \`
-        <div class="offline-search-item">
-          <h3>Search: "\${item.query}"</h3>
-          <div class="offline-results-grid">
-            \${item.results.slice(0, 6).map(result => cardHtml(result, showThumbsEl.checked)).join('')}
-          </div>
-          <div class="offline-timestamp">Saved \${this.formatTimestamp(item.timestamp)}</div>
-        </div>
-      \`;
-    });
-    
-    resultsEl.innerHTML = html;
-    
-    // Initialize lazy loading for offline content
-    if ('IntersectionObserver' in window) {
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const img = entry.target;
-            if (img.dataset.src) {
-              img.src = img.dataset.src;
-              img.removeAttribute('data-src');
-            }
-            observer.unobserve(img);
-          }
-        });
-      });
-      
-      document.querySelectorAll('img[data-src]').forEach(img => {
-        observer.observe(img);
-      });
-    }
-  }
-  
-  formatTimestamp(timestamp) {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) {
-      return 'Today at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Yesterday at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else {
-      return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-  }
-  
-  showOfflineNotification() {
-    showToast('You are offline. Showing saved content.', 'offline');
-  }
-  
-  showOnlineNotification() {
-    showToast('You\'re back online!', 'online');
-  }
-}
-
-// Initialize offline manager
-const offlineManager = new OfflineManager();
-
-// Add voice search if supported
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-  const voiceButton = document.createElement('button');
-  voiceButton.type = 'button';
-  voiceButton.className = 'voice-search';
-  voiceButton.innerHTML = '🎤';
-  voiceButton.title = 'Search by voice';
-  voiceButton.setAttribute('aria-label', 'Search by voice');
-  
-  qEl.parentNode.insertBefore(voiceButton, qEl.nextSibling);
-  
-  voiceButton.addEventListener('click', () => {
-    // Create speech recognition instance
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    
-    recognition.onstart = () => {
-      voiceButton.classList.add('listening');
-      voiceButton.innerHTML = '🔴';
-      showToast('Listening...');
-    };
-    
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      qEl.value = transcript;
-      // Trigger input event for UI updates
-      qEl.dispatchEvent(new Event('input'));
-      // Submit the form after a short delay
-      setTimeout(() => {
-        document.getElementById('searchForm').dispatchEvent(new Event('submit'));
-      }, 500);
-    };
-    
-    recognition.onend = () => {
-      voiceButton.classList.remove('listening');
-      voiceButton.innerHTML = '🎤';
-    };
-    
-    recognition.onerror = (event) => {
-      voiceButton.classList.remove('listening');
-      voiceButton.innerHTML = '🎤';
-      showToast('Voice recognition error: ' + event.error);
-    };
-    
-    recognition.start();
-  });
-}
-
-// Add clear button to search input
-const clearButton = document.createElement('button');
-clearButton.type = 'button';
-clearButton.className = 'search-clear';
-clearButton.innerHTML = '✕';
-clearButton.setAttribute('aria-label', 'Clear search');
-clearButton.style.display = 'none';
-qEl.parentNode.insertBefore(clearButton, qEl.nextSibling);
-
-qEl.addEventListener('input', () => {
-  clearButton.style.display = qEl.value ? 'block' : 'none';
-});
-
-clearButton.addEventListener('click', () => {
-  qEl.value = '';
-  clearButton.style.display = 'none';
-  qEl.focus();
-});
-
-// Add share button if Web Share API is available
-if (navigator.share) {
-  const shareButton = document.createElement('button');
-  shareButton.type = 'button';
-  shareButton.className = 'secondary';
-  shareButton.innerHTML = 'Share';
-  shareButton.title = 'Share results';
-  
-  const actionsContainer = document.querySelector('.actions');
-  actionsContainer.appendChild(shareButton);
-  
-  shareButton.addEventListener('click', () => {
-    const results = [...document.querySelectorAll('.card')].map(card => {
-      const title = card.querySelector('div[style*="font-weight"]').textContent.trim();
-      const url = card.querySelector('a.link').href;
-      return \`\${title} - \${url}\`;
-    }).join('\\n\\n');
-    
-    const searchQuery = qEl.value;
-    
-    navigator.share({
-      title: \`Jack Portal Results for "\${searchQuery}"\`,
-      text: results,
-      url: window.location.href
-    }).catch(err => {
-      console.error('Share failed:', err);
-      showToast('Sharing failed');
-    });
-  });
-}
-
-// Event listeners
-document.addEventListener('DOMContentLoaded', () => {
-  // Load saved defaults
-  loadDefaults();
-  
-  // Load recent searches
-  renderRecentSearches();
-  
-  // Chip selection for search mode
-  modeChips.addEventListener("click", (e) => {
-    const chip = e.target.closest(".chip");
-    if (!chip) return;
-    chipSync(chip.dataset.mode);
-  });
-  
-  // Support keyboard navigation for chips
-  modeChips.querySelectorAll('.chip').forEach(chip => {
-    chip.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        chipSync(chip.dataset.mode);
-      }
-    });
-  });
-  
-  // Debug toggle
-  dbgBtn.addEventListener("click", () => debugEl.classList.toggle("show"));
-  
-  // Save defaults
-  saveBtn.addEventListener("click", () => {
-    saveDefaults();
-    setStatus("defaults saved");
-    showToast('Defaults saved');
-    setTimeout(() => setStatus("idle"), 800);
-  });
-  
-  // Reset form
-  resetBtn.addEventListener("click", () => {
-    qEl.value = "";
-    durationEl.value = "";
-    siteEl.value = "";
-    freshSel.value = "all";
-    limitEl.value = "20";
-    showThumbsEl.checked = true;
-    chipSync("niche");
-    hostModeSel.value = "normal";
-    durationModeSel.value = "normal";
-    setStatus("reset");
-    showToast('Form reset');
-    setTimeout(() => setStatus("idle"), 800);
-  });
-  
-  // Copy results
-  copyBtn.addEventListener("click", async () => {
-    const data = [...resultsEl.querySelectorAll(".card")].map(c => {
-      const title = c.querySelector("div[style*='font-weight']").textContent.trim();
-      const site = c.querySelector(".meta").textContent.replace(/\\s+/g, " ").trim();
-      const url = c.querySelector("a.link")?.href || "";
-      return title + " — " + site + " — " + url;
-    }).join("\\n");
-    
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(data);
-        setStatus("copied");
-        showToast('Results copied to clipboard');
-      } else {
-        const ta = document.createElement("textarea");
-        ta.value = data;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        setStatus("copied");
-        showToast('Results copied to clipboard');
-      }
-    } catch (e) {
-      console.error('Copy failed:', e);
-      setStatus("copy failed");
-      showToast('Copy failed');
-    } finally {
-      setTimeout(() => setStatus("idle"), 1200);
-    }
-  });
-  
-  // Check for updates button
-  document.getElementById('checkUpdates').addEventListener('click', checkForUpdates);
-  
-  // Search form submission
-  const searchForm = document.getElementById('searchForm');
-  searchForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    
-    const query = qEl.value.trim();
-    if (!query) {
-      showError("Please enter a search query");
-      setStatus("enter a query");
-      return;
-    }
-    
-    // Handle offline mode
-    if (!navigator.onLine) {
-      showError("You're offline. Connect to the internet to search.");
-      return;
-    }
-    
-    // Clear previous results and error messages
-    clearError();
-    goBtn.disabled = true;
-    setStatus("loading…");
-    
-    // Show loading skeletons
-    renderLoadingSkeleton(parseInt(limitEl.value) > 6 ? 6 : parseInt(limitEl.value));
-    
-    // Show progress indicator
-    const progressInterval = startProgress();
-    
-    try {
-      // Execute search
-      const response = await fetchWithRetry(buildUrl());
-      const data = await response.json();
-      
-      // Save to recent searches
-      saveRecentSearch(query);
-      
-      // Save for offline use
-      offlineManager.saveSearch(query, data.results || []);
-      
-      // Render results
-      render(data.results || []);
-      
-      // Show debug info if available
-      if (data.diag) {
-        debugEl.textContent = JSON.stringify(data.diag, null, 2);
-      }
-      
-      setStatus('done (' + ((data.results || []).length) + ')');
-    } catch (error) {
-      console.error('Search error:', error);
-      showError(error.message || "Search failed");
-      setStatus("error");
-      debugEl.textContent = String(error);
-    } finally {
-      goBtn.disabled = false;
-      completeProgress(progressInterval);
-    }
-  });
-});
-
-// Register service worker for offline capability and PWA support
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js', { scope: '/' })
-    .then(registration => {
-      console.log('Service worker registered successfully');
-    })
-    .catch(error => {
-      console.error('Service worker registration failed:', error);
-    });
-}
-</script>
-</body>
-</html>`;
-
-// -------------------- Service Worker Script --------------------
-const SW_JS = `// Jack-GPT Enterprise Service Worker v${APP_VERSION}
-const CACHE_NAME = 'jack-portal-v2';
+// Jack-GPT - Enhanced Content Search Portal
+// Author: itstanner5216
+// Updated: 2025-08-30
+// ---------------- Service Worker payload (served at /sw.js) ----------------
+const SW_JS = `const CACHE_NAME = 'jack-portal-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/icon-192.png',
   '/icon-512.png',
+  '/site.webmanifest',
   '/manifest.json'
 ];
 
-// Install event - cache core assets
+// Install event - cache assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -2808,7 +32,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache if available, otherwise fetch from network
+// Enhanced fetch event with improved strategies
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) return;
@@ -2817,8 +41,8 @@ self.addEventListener('fetch', (event) => {
   if (event.request.url.includes('/aggregate')) return;
   
   // For HTML requests (navigation), try network first, then cache
-  if (event.request.mode === 'navigate' || 
-      (event.request.method === 'GET' && 
+  if (event.request.mode === 'navigate' ||
+      (event.request.method === 'GET' &&
        event.request.headers.get('accept').includes('text/html'))) {
     event.respondWith(
       fetch(event.request)
@@ -2857,6 +81,7 @@ self.addEventListener('fetch', (event) => {
             if (event.request.url.match(/\\.(jpg|jpeg|png|gif|webp|svg)$/)) {
               return caches.match('/icon-192.png');
             }
+            
             return new Response('Network error occurred', {
               status: 408,
               headers: { 'Content-Type': 'text/plain' }
@@ -2871,10 +96,9 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
-});
-`;
+});`;
 
-// -------------------- Web App Manifest --------------------
+// ---------------- Web Manifest JSON ----------------
 const MANIFEST_JSON = JSON.stringify({
   "name": "Jack Portal",
   "short_name": "Jack",
@@ -2903,125 +127,4888 @@ const MANIFEST_JSON = JSON.stringify({
       "url": "/?fresh=true",
       "description": "Start a new search"
     }
-  ],
-  "categories": ["utilities", "productivity"]
+  ]
 });
 
-// -------------------- Health Check Response --------------------
-function serveHealthCheck() {
-  return new Response(JSON.stringify({
-    status: 'healthy',
-    version: APP_VERSION,
-    timestamp: new Date().toISOString()
-  }), {
-    status: 200,
-    headers: {
-      'content-type': 'application/json',
-      'access-control-allow-origin': '*'
+// ---------------- Configuration Storage Keys ----------------
+const SOURCES_CONFIG_KEY = 'jack.admin.customSources';
+const FILTER_CONFIG_KEY = 'jack.admin.filterConfig';
+const ADMIN_TOKEN_KEY = 'jack.admin.token';
+const USER_PREFS_KEY = 'jack.userPreferences';
+const RECENT_SEARCHES_KEY = 'jack.recentSearches';
+
+// ---------------- Admin Configuration System ----------------
+// Admin configuration and authentication
+const ADMIN_CONFIG = {
+  ownerUsername: 'itstanner5216',
+  // This hash represents a secure password (replace with proper secure hash in production)
+  credentialsHash: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8'
+};
+
+const ADMIN_SESSION_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+
+// Default configuration structure for sources
+const DEFAULT_SOURCES_CONFIG = {
+  version: 1,
+  lastUpdated: new Date().toISOString(),
+  sources: [
+    // Pre-populated with default gay male tube sites
+    {
+      name: "Homo Tube Videos",
+      domain: "homotube.com",
+      mode: "all",
+      priority: "high",
+      enabled: true
+    },
+    {
+      name: "Gay Male Tube",
+      domain: "gaymaletube.com",
+      mode: "all",
+      priority: "high",
+      enabled: true
+    },
+    {
+      name: "Boyfriend TV",
+      domain: "boyfriendtv.com",
+      mode: "all",
+      priority: "normal",
+      enabled: true
+    },
+    {
+      name: "Man Porn",
+      domain: "manporn.xxx",
+      mode: "all",
+      priority: "normal",
+      enabled: true
+    },
+    {
+      name: "Gay Tube",
+      domain: "gaytube.com",
+      mode: "all",
+      priority: "normal",
+      enabled: true
+    },
+    {
+      name: "Gay Sex Videos",
+      domain: "gaysexvideos.tv",
+      mode: "all",
+      priority: "normal",
+      enabled: true
+    },
+    {
+      name: "Only Dudes TV",
+      domain: "onlydudes.tv",
+      mode: "all",
+      priority: "normal",
+      enabled: true
+    },
+    {
+      name: "Red Gay",
+      domain: "redgay.net",
+      mode: "all",
+      priority: "normal",
+      enabled: true
     }
+  ]
+};
+
+// Default filter configuration
+const DEFAULT_FILTER_CONFIG = {
+  version: 1,
+  lastUpdated: new Date().toISOString(),
+  // Negative terms to filter out unwanted content
+  negativeTerms: [
+    { id: 'n1', term: 'lesbian', category: 'content', enabled: true },
+    { id: 'n2', term: 'female', category: 'content', enabled: true },
+    { id: 'n3', term: 'straight sex', category: 'content', enabled: true },
+    { id: 'n4', term: 'f/f', category: 'content', enabled: true },
+    { id: 'n5', term: 'f/m', category: 'content', enabled: true },
+    { id: 'n6', term: 'girl on girl', category: 'content', enabled: true },
+    { id: 'n7', term: 'woman', category: 'content', enabled: true }
+  ],
+  // Positive terms to prioritize relevant content
+  positiveTerms: [
+    { id: 'p1', term: 'gay male', category: 'content', enabled: true },
+    { id: 'p2', term: 'men only', category: 'content', enabled: true },
+    { id: 'p3', term: 'male gay', category: 'content', enabled: true },
+    { id: 'p4', term: 'm/m', category: 'content', enabled: true },
+    { id: 'p5', term: 'homo', category: 'content', enabled: true }
+  ],
+  // Filter settings
+  settings: {
+    filterStrength: 'moderate', // 'light', 'moderate', 'strict'
+    confidenceThreshold: 0.7,
+    requirePositiveMatch: false,
+    prioritizeCustomSources: true
+  }
+};
+
+// User preferences configuration
+const DEFAULT_USER_PREFERENCES = {
+  // Search preferences
+  defaultMode: "niche",
+  defaultFreshness: "y1",
+  defaultLimit: 10,
+  // Display preferences
+  displayMode: "list", // "list" or "grid"
+  thumbnailSize: "medium", // "small", "medium", "large", "hidden"
+  showTags: true,
+  showRuntime: true,
+  colorTheme: "system", // "light", "dark", "system"
+  compactMode: false,
+  // Advanced settings
+  openLinksInNewTab: true,
+  enableRecentSearches: true,
+  maxRecentSearches: 5,
+  // Version for migrations
+  preferencesVersion: 1
+};
+
+// Performance configuration
+const DEBOUNCE_DELAY = 300; // ms
+const THROTTLE_DELAY = 500; // ms
+
+// Link extraction and optimization utilities
+const LINK_EXTRACTION_CONFIG = {
+  // Minimum confidence threshold for link extraction
+  minConfidence: 0.7,
+  // Maximum number of retries for failed link extraction
+  maxRetries: 2,
+  // Timeout for link extraction in milliseconds
+  timeout: 5000,
+  // Enabled content types for extraction
+  enabledContentTypes: ['video', 'audio', 'image', 'article']
+};
+
+// CORS Configuration
+const CORS_CONFIG = {
+  allowOrigin: "*",
+  allowMethods: "GET, POST, OPTIONS",
+  allowHeaders: "Content-Type, Authorization, X-Requested-With",
+  maxAge: "86400", // Cache preflight results for 24 hours
+  allowCredentials: false // Set to true if you need to support credentials
+};
+
+// Helper function to add proper CORS headers to responses
+function addCorsHeaders(response, options = {}) {
+  const headers = response.headers;
+  // Use default CORS config with any overrides
+  const config = { ...CORS_CONFIG, ...options };
+  
+  // Add standard CORS headers
+  headers.set("access-control-allow-origin", config.allowOrigin);
+  headers.set("access-control-allow-methods", config.allowMethods);
+  headers.set("access-control-allow-headers", config.allowHeaders);
+  
+  // Add cache duration for preflight requests
+  if (config.maxAge) {
+    headers.set("access-control-max-age", config.maxAge);
+  }
+  
+  // Allow credentials if specified
+  if (config.allowCredentials) {
+    headers.set("access-control-allow-credentials", "true");
+  }
+  
+  // Add Vary header for proper caching behavior when origin varies
+  if (config.allowOrigin !== "*") {
+    headers.set("vary", headers.get("vary")
+      ? headers.get("vary") + ", Origin"
+      : "Origin");
+  }
+  
+  return response;
+}
+
+// ---------------- Utility Functions ----------------
+// Helper functions
+function validateQuery(query, limit) {
+  if (!query || query.trim().length < 2) {
+    return "Please enter a valid search query (at least 2 characters)";
+  }
+  if (limit && (isNaN(limit) || limit < 3 || limit > 20)) {
+    return "Result limit must be between 3 and 20";
+  }
+  return null;
+}
+
+// Join path segments, handling trailing slashes correctly
+function joinPath(base, path) {
+  if (base.endsWith("/")) {
+    base = base.slice(0, -1);
+  }
+  if (path.startsWith("/")) {
+    path = path.slice(1);
+  }
+  return base ? `${base}/${path}` : path;
+}
+
+// Secure hash function using Web Crypto API
+async function secureHash(text) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Generate a unique ID for new terms
+function generateId(prefix) {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).substr(2, 5)}`;
+}
+
+// Extract domain from URL or site string
+function extractDomain(url) {
+  try {
+    // Try to parse as URL
+    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+    return urlObj.hostname.replace(/^www\./, '');
+  } catch (e) {
+    // If parsing fails, try simpler extraction
+    return url.replace(/^(?:https?:\/\/)?(?:www\.)?([^\/]+).*$/, '$1');
+  }
+}
+
+// Image optimization from Jack-script3
+function optimizeThumbnail(url, width = 280) {
+  if (!url) return null;
+  
+  // YouTube thumbnail optimization
+  if (url.match(/\/vi\/([^\/]+)\/\w+\.jpg$/)) {
+    return url.replace(/\/\w+\.jpg$/, '/mqdefault.jpg');
+  }
+  
+  // Google CDN optimization
+  if (url.match(/^https?:\/\/[^\/]+\.(googleusercontent|ggpht|ytimg)\.com\//)) {
+    return `${url}=w${width}`;
+  }
+  
+  return url;
+}
+
+// Enhanced fetch with timeout and retry from Jack-script3
+async function fetchWithTimeout(resource, options = {}, timeout = 9000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const res = await fetch(resource, {
+      ...options,
+      signal: controller.signal,
+      cf: { cacheTtl: 0, cacheEverything: false }
+    });
+    clearTimeout(id);
+    return res;
+  } catch (e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
+
+// Enhanced fetch with retry from Jack-script3
+async function fetchWithRetry(url, options = {}, retries = 2, backoffDelay = 800) {
+  try {
+    const response = await fetch(url, {
+      ...options,
+      cache: "no-store"
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      try {
+        const errorData = JSON.parse(errorText);
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          throw new Error(`HTTP ${response.status}: ${errorText.slice(0, 100)}`);
+        }
+        throw e;
+      }
+    }
+    
+    return response;
+  } catch (error) {
+    if (retries > 0 && (error.message.includes('timeout') || error.message.includes('network'))) {
+      // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      return fetchWithRetry(url, options, retries - 1, backoffDelay * 1.5);
+    }
+    throw error;
+  }
+}
+
+// Fetch JSON helper
+async function fetchJSON(url, options = {}, timeout = 10000) {
+  try {
+    const response = await fetchWithTimeout(url, options, timeout);
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    return await response.json();
+  } catch (e) {
+    console.error(`fetchJSON error: ${e.message}`);
+    return null;
+  }
+}
+
+// Duration handling from Jack-script3
+function durToSeconds(d) {
+  if (!d) return null;
+  if (/^\d+$/.test(d)) return parseInt(d, 10);
+  
+  const iso = d.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  if (iso) return (+iso[1] || 0) * 3600 + (+iso[2] || 0) * 60 + (+iso[3] || 0);
+  
+  const mm = d.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (mm) return +mm[1] * 60 + +mm[2];
+  
+  return null;
+}
+
+// Format seconds as MM:SS
+function fmtMMSS(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(s / 60), r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+// Duration parsing
+function parseDurationQuery(s) {
+  if (!s) return null;
+  const x = s.trim().toLowerCase();
+  
+  if (/^\d{1,5}-\d{1,5}$/.test(x)) {
+    const [a, b] = x.split("-").map(n => +n);
+    return { min: Math.min(a, b), max: Math.max(a, b) };
+  }
+  
+  if (/^pt/.test(x)) {
+    const sec = durToSeconds(x);
+    if (sec != null) return { min: sec, max: sec };
+  }
+  
+  const lt = x.match(/^<?=?\s*(\d{1,3})\s*m$/);
+  if (lt) return { min: 0, max: +lt[1] * 60 };
+  
+  const gt = x.match(/^(\d{1,3})\s*\+\s*m$/);
+  if (gt) return { min: +gt[1] * 60, max: 86400 };
+  
+  const rng = x.match(/^(\d{1,3})\s*-\s*(\d{1,3})\s*m$/);
+  if (rng) {
+    const a = +rng[1] * 60, b = +rng[2] * 60;
+    return { min: Math.min(a, b), max: Math.max(a, b) };
+  }
+  
+  const sec = durToSeconds(x);
+  if (sec != null) return { min: sec, max: sec };
+  
+  return null;
+}
+
+// Check if duration fits within range
+function fitsDuration(sec, range, host, durationMode) {
+  if (!range || sec == null) return true;
+  
+  let tol = durationMode === "lenient" ? 60 : 15;
+  // Add extra tolerance for some hosts
+  if (host && (host.includes('tube') || host.includes('porn'))) tol += 45;
+  
+  return sec >= (range.min - tol) && sec <= (range.max + tol);
+}
+
+// Concurrency utilities from Jack-script3
+async function poolMap(items, worker, n = 6) {
+  const out = new Array(items.length);
+  let i = 0;
+  
+  const runners = Array(Math.min(n, items.length)).fill(0).map(async function run() {
+    while (i < items.length) {
+      const idx = i++;
+      try {
+        out[idx] = await worker(items[idx], idx);
+      } catch (e) {
+        out[idx] = null;
+        console.error(`poolMap worker error: ${e.message}`);
+      }
+    }
+  });
+  
+  await Promise.all(runners);
+  return out;
+}
+
+// ---------------- Authentication System ----------------
+// Verify admin credentials
+async function verifyAdminCredentials(username, accessKey) {
+  if (username !== ADMIN_CONFIG.ownerUsername) {
+    return false;
+  }
+  const hashedInput = await secureHash(accessKey);
+  return hashedInput === ADMIN_CONFIG.credentialsHash;
+}
+
+// Create secure admin session
+function createAdminSession(username) {
+  const token = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + ADMIN_SESSION_EXPIRY);
+  const sessionData = {
+    username,
+    expiresAt: expiresAt.toISOString()
+  };
+  localStorage.setItem(ADMIN_TOKEN_KEY, JSON.stringify({
+    token,
+    data: sessionData
+  }));
+  return { token, expiresAt };
+}
+
+// Validate admin session
+function validateAdminSession() {
+  try {
+    const stored = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!stored) return false;
+    
+    const { token, data } = JSON.parse(stored);
+    if (!token || !data) return false;
+    
+    const { username, expiresAt } = data;
+    if (username !== ADMIN_CONFIG.ownerUsername) return false;
+    
+    if (new Date(expiresAt) < new Date()) {
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Session validation error:', error);
+    return false;
+  }
+}
+
+// ---------------- Configuration Management ----------------
+// Load sources configuration
+function loadSourcesConfig() {
+  try {
+    const stored = localStorage.getItem(SOURCES_CONFIG_KEY);
+    if (!stored) {
+      return DEFAULT_SOURCES_CONFIG;
+    }
+    return JSON.parse(stored);
+  } catch (error) {
+    console.error('Failed to load sources configuration', error);
+    return DEFAULT_SOURCES_CONFIG;
+  }
+}
+
+// Save sources configuration
+function saveSourcesConfig(config) {
+  try {
+    // Update metadata
+    config.lastUpdated = new Date().toISOString();
+    localStorage.setItem(SOURCES_CONFIG_KEY, JSON.stringify(config));
+    return true;
+  } catch (error) {
+    console.error('Failed to save sources configuration', error);
+    return false;
+  }
+}
+
+// Load filter configuration
+function loadFilterConfig() {
+  try {
+    const stored = localStorage.getItem(FILTER_CONFIG_KEY);
+    if (!stored) {
+      return DEFAULT_FILTER_CONFIG;
+    }
+    return JSON.parse(stored);
+  } catch (error) {
+    console.error('Failed to load filter configuration', error);
+    return DEFAULT_FILTER_CONFIG;
+  }
+}
+
+// Save filter configuration
+function saveFilterConfig(config) {
+  try {
+    // Update metadata
+    config.lastUpdated = new Date().toISOString();
+    localStorage.setItem(FILTER_CONFIG_KEY, JSON.stringify(config));
+    return true;
+  } catch (error) {
+    console.error('Failed to save filter configuration', error);
+    return false;
+  }
+}
+
+// User preferences system
+function getUserPreferences() {
+  try {
+    const stored = localStorage.getItem(USER_PREFS_KEY);
+    if (!stored) {
+      return DEFAULT_USER_PREFERENCES;
+    }
+    
+    const preferences = JSON.parse(stored);
+    
+    // Handle version migrations
+    if (!preferences.preferencesVersion || preferences.preferencesVersion < DEFAULT_USER_PREFERENCES.preferencesVersion) {
+      // For future migrations between versions
+      preferences.preferencesVersion = DEFAULT_USER_PREFERENCES.preferencesVersion;
+    }
+    
+    // Merge with defaults (in case new options were added)
+    return { ...DEFAULT_USER_PREFERENCES, ...preferences };
+  } catch (e) {
+    console.error('Failed to parse user preferences', e);
+    return DEFAULT_USER_PREFERENCES;
+  }
+}
+
+function saveUserPreferences(preferences) {
+  try {
+    localStorage.setItem(USER_PREFS_KEY, JSON.stringify(preferences));
+    return true;
+  } catch (e) {
+    console.error('Failed to save user preferences', e);
+    return false;
+  }
+}
+
+// ---------------- Content Filtering System ----------------
+// Apply content filters to search results
+function applyContentFilters(results, filterConfig) {
+  if (!results || !Array.isArray(results)) return [];
+  
+  // Get active filters
+  const negativeTerms = filterConfig.negativeTerms
+    .filter(term => term.enabled)
+    .map(term => term.term.toLowerCase());
+    
+  const positiveTerms = filterConfig.positiveTerms
+    .filter(term => term.enabled)
+    .map(term => term.term.toLowerCase());
+  
+  // Get filter settings
+  const settings = filterConfig.settings || {};
+  const filterStrength = settings.filterStrength || 'moderate';
+  const confidenceThreshold = parseFloat(settings.confidenceThreshold || 0.7);
+  const requirePositiveMatch = settings.requirePositiveMatch || false;
+  
+  // Process each result
+  return results.filter(result => {
+    // Combined text for analysis
+    const title = (result.title || '').toLowerCase();
+    const snippet = (result.snippet || '').toLowerCase();
+    const combinedText = `${title} ${snippet}`;
+    const domain = (result.site || '').toLowerCase();
+    
+    // Calculate confidence score
+    let score = 0.5; // Start with neutral score
+    
+    // Check for negative terms
+    const hasNegativeTerms = negativeTerms.some(term => {
+      // Apply different matching logic based on filter strength
+      if (filterStrength === 'strict') {
+        // In strict mode, even partial matches are considered
+        return combinedText.includes(term);
+      } else if (filterStrength === 'moderate') {
+        // In moderate mode, check for word boundaries
+        const regex = new RegExp(`\\b${term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+        return regex.test(combinedText);
+      } else {
+        // In light mode, only exact phrases are filtered
+        return combinedText.includes(` ${term} `);
+      }
+    });
+    
+    // If has negative terms, reduce score significantly
+    if (hasNegativeTerms) {
+      score -= 0.4;
+    }
+    
+    // Check for positive terms
+    const hasPositiveTerms = positiveTerms.some(term => {
+      return combinedText.includes(term);
+    });
+    
+    // If has positive terms, increase score
+    if (hasPositiveTerms) {
+      score += 0.3;
+    }
+    
+    // Boost score for relevant domains
+    if (domain.includes('gay') || domain.includes('male') || domain.includes('men')) {
+      score += 0.2;
+    }
+    
+    // Apply additional rules based on filter strength
+    if (filterStrength === 'strict') {
+      // In strict mode, require positive terms if enabled
+      if (requirePositiveMatch && !hasPositiveTerms) {
+        return false;
+      }
+    }
+    
+    // Store the confidence score in the result for debugging
+    result._confidence = score;
+    result._filtered = true;
+    
+    // Compare score against threshold
+    return score >= confidenceThreshold;
   });
 }
 
-// -------------------- Version Check Response --------------------
-function serveVersionCheck() {
-  return new Response(JSON.stringify({
-    version: APP_VERSION,
-    buildDate: BUILD_DATE,
-    updateUrl: '/'
-  }), {
-    status: 200,
-    headers: {
-      'content-type': 'application/json',
-      'cache-control': 'no-cache',
-      'access-control-allow-origin': '*'
-    }
-  });
-}
-
-// -------------------- Main Worker Export --------------------
-export default {
-  async fetch(request, env, ctx) {
-    try {
-      const url = new URL(request.url);
-      const path = url.pathname;
+// Enhanced content extraction from Jack-script3
+async function getPlayableMeta(uStr) {
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    "Accept-Language": "en-US,en;q=0.9"
+  };
+  
+  let finalUrl = uStr, ct = "", textSample = "", thumb = null, rawHtml = "";
+  
+  try {
+    const res = await fetchWithTimeout(uStr, { method: "GET", redirect: "follow", headers }, 9000);
+    finalUrl = res.url || finalUrl;
+    ct = res.headers.get("content-type") || "";
+    
+    if ((ct || "").includes("text/html")) {
+      const body = await res.text();
+      rawHtml = body;
+      textSample = body.slice(0, 40000).toLowerCase();
       
-      // CORS preflight
-      if (request.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            "access-control-allow-origin": "*",
-            "access-control-allow-methods": "GET, OPTIONS",
-            "access-control-allow-headers": "*",
-            "access-control-max-age": "86400"
-          }
+      // Extract thumbnails
+      const og = body.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+        || body.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+      const tw = body.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+      thumb = (og && og[1]) || (tw && tw[1]) || null;
+      
+      if (!thumb) {
+        const cdn = body.match(/https?:\/\/[^"']+\/(?:thumb|preview|poster)[^"']+\.(?:jpg|jpeg|png|webp)/i);
+        if (cdn) thumb = cdn[0];
+      }
+    }
+  } catch (e) {
+    console.error(`Network error: ${e.message}`);
+    return { ok: false, url: finalUrl, ct, playable: false };
+  }
+  
+  // Duration extraction
+  let durationSec = null;
+  if (textSample) {
+    const ld = textSample.match(/"duration"\s*:\s*"(pt[^"]+)"/i);
+    if (ld) durationSec = durToSeconds(ld[1]);
+    
+    if (!durationSec) {
+      const og = textSample.match(/property=["']og:video:duration["'][^>]*content=["'](\d{1,6})["']/i);
+      if (og) durationSec = parseInt(og[1], 10);
+    }
+    
+    if (!durationSec) {
+      const m = textSample.match(/\b(\d{1,2}):(\d{2})\b/);
+      if (m) durationSec = +m[1] * 60 + +m[2];
+    }
+  }
+  
+  // Check if content appears playable
+  const HTML_PLAYER_RX = /(og:video|<video|\bsource\s+src=|jwplayer|video-js|plyr|hls|m3u8|\.mp4\b|data-hl)/i;
+  const isPlayable = HTML_PLAYER_RX.test(textSample || "") || 
+                    /video|mp4|m3u8|application\/octet-stream/i.test(ct) ||
+                    /player|embed|hls|m3u8|\.mp4\b/i.test(finalUrl);
+  
+  return {
+    ok: true,
+    url: finalUrl,
+    ct,
+    playable: isPlayable,
+    duration: durationSec,
+    thumbnail: thumb ? optimizeThumbnail(thumb) : null
+  };
+}
+
+// Optimized link extraction logic
+function extractUsableLinks(results, customSources = []) {
+  if (!results || !Array.isArray(results)) return [];
+  
+  // Combine trusted domains from customSources with default ones
+  const trustedDomains = [
+    'homotube.com',
+    'gaymaletube.com',
+    'boyfriendtv.com',
+    'manporn.xxx',
+    'pornmd.com',
+    'gaytube.com',
+    'gaysexvideos.tv',
+    'hellomorningstarrs.com',
+    'onlydudes.tv',
+    'redgay.net',
+    'eporner.com',
+    'gayforfans.com',
+    'youngsfun.com',
+    'redtube.com',
+    'gotgayporn.com',
+    'tubegalore.com',
+    'manhub.com',
+    'txxx.com',
+    ...customSources.map(source => source.domain)
+  ];
+  
+  // Enhanced link extraction with confidence scoring
+  return results.map(result => {
+    // Original result
+    const original = { ...result };
+    
+    // Confidence scoring for link quality
+    let confidenceScore = 0;
+    
+    // Check if URL is from trusted domain
+    const domain = result.site?.toLowerCase() || '';
+    const isTrustedDomain = trustedDomains.some(td => domain.includes(td));
+    if (isTrustedDomain) confidenceScore += 0.5;
+    
+    // Check if URL appears valid (basic validation)
+    const hasValidUrl = result.url && /^https?:\/\/.+/.test(result.url);
+    if (hasValidUrl) confidenceScore += 0.3;
+    
+    // Check if content has necessary metadata
+    const hasMetadata = result.title && result.thumbnail;
+    if (hasMetadata) confidenceScore += 0.2;
+    
+    // Boost confidence for sites with explicit gay male content
+    if (domain.includes('gay') || domain.includes('male') || domain.includes('homo')) {
+      confidenceScore += 0.3;
+    }
+    
+    // Check URL for relevance indicators
+    if (result.url && (
+      result.url.includes('/gay/') ||
+      result.url.includes('/male/') ||
+      result.url.includes('/men/')
+    )) {
+      confidenceScore += 0.2;
+    }
+    
+    // Check title for relevance
+    if (result.title && (
+      result.title.toLowerCase().includes('gay') ||
+      result.title.toLowerCase().includes('male')
+    )) {
+      confidenceScore += 0.2;
+    }
+    
+    // Reduce confidence for potentially irrelevant content
+    if (result.title && (
+      result.title.toLowerCase().includes('female') ||
+      result.title.toLowerCase().includes('lesbian') ||
+      result.title.toLowerCase().includes('straight')
+    )) {
+      confidenceScore -= 0.4;
+    }
+    
+    // Apply link optimization filters
+    if (confidenceScore >= LINK_EXTRACTION_CONFIG.minConfidence) {
+      // URL cleanup and normalization
+      let url = result.url;
+      
+      // Fix common URL issues
+      if (url && !url.startsWith('http')) {
+        url = 'https://' + url;
+      }
+      
+      // Remove tracking parameters
+      try {
+        const urlObj = new URL(url);
+        ['utm_source', 'utm_medium', 'utm_campaign', 'ref', 'source'].forEach(param => {
+          urlObj.searchParams.delete(param);
         });
+        url = urlObj.toString();
+      } catch (e) {
+        // URL parsing failed, use original
       }
       
-      // API routes
-      if (path === "/aggregate") {
-        return handleAggregate(request, env, ctx);
+      // Update the result with optimized URL
+      result.url = url;
+      
+      // Add confidence metadata for debugging
+      result._confidence = confidenceScore;
+      result._optimized = true;
+      
+      return result;
+    }
+    
+    // If confidence is too low, return original result
+    return original;
+  });
+}
+
+// ---------------- API Documentation Endpoint ----------------
+function serveApiDocs() {
+  return new Response(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jack-GPT API Documentation</title>
+<style>
+:root {
+--bg: #ffffff;
+--text: #333333;
+--border: #e0e0e0;
+--code-bg: #f5f7f9;
+--primary: #3b82f6;
+--secondary: #64748b;
+--radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+:root {
+--bg: #121212;
+--text: #e0e0e0;
+--border: #2a2a2a;
+--code-bg: #1e1e1e;
+--primary: #60a5fa;
+--secondary: #94a3b8;
+}
+}
+* { box-sizing: border-box; }
+body {
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans',
+sans-serif;
+line-height: 1.6;
+max-width: 1000px;
+margin: 0 auto;
+padding: 20px;
+color: var(--text);
+background: var(--bg);
+}
+h1 {
+border-bottom: 1px solid var(--border);
+padding-bottom: 10px;
+font-size: 2rem;
+margin-top: 0;
+}
+h2 {
+margin-top: 2rem;
+font-size: 1.5rem;
+padding-bottom: 5px;
+border-bottom: 1px solid var(--border);
+}
+h3 {
+margin-top: 1.5rem;
+font-size: 1.2rem;
+color: var(--primary);
+}
+code {
+background: var(--code-bg);
+padding: 2px 5px;
+border-radius: 3px;
+font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+font-size: 0.9em;
+}
+pre {
+background: var(--code-bg);
+padding: 15px;
+border-radius: var(--radius);
+overflow-x: auto;
+border: 1px solid var(--border);
+}
+pre code {
+background: transparent;
+padding: 0;
+}
+table {
+border-collapse: collapse;
+width: 100%;
+margin: 20px 0;
+}
+th, td {
+border: 1px solid var(--border);
+padding: 10px 15px;
+text-align: left;
+}
+th {
+background: var(--code-bg);
+font-weight: 600;
+}
+a {
+color: var(--primary);
+text-decoration: none;
+}
+a:hover {
+text-decoration: underline;
+}
+.endpoint {
+background: var(--code-bg);
+padding: 10px 15px;
+border-radius: var(--radius);
+border-left: 4px solid var(--primary);
+margin: 15px 0;
+font-weight: 600;
+}
+.method {
+display: inline-block;
+padding: 3px 8px;
+border-radius: 4px;
+background: var(--primary);
+color: white;
+font-size: 0.8rem;
+margin-right: 8px;
+}
+.version-info {
+text-align: right;
+font-size: 0.8rem;
+color: var(--secondary);
+margin-top: 2rem;
+}
+</style>
+</head>
+<body>
+<h1>Jack-GPT API Documentation</h1>
+<p>
+Jack-GPT provides powerful content search capabilities through a RESTful API.
+This documentation outlines available endpoints, parameters, and expected responses.
+</p>
+
+<h2>Aggregate Search API</h2>
+<p>The primary endpoint for performing content searches with advanced filtering capabilities.</p>
+
+<div class="endpoint">
+<span class="method">GET</span> /aggregate
+</div>
+
+<h3>Query Parameters</h3>
+<table>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+<th>Required</th>
+<th>Default</th>
+</tr>
+<tr>
+<td><code>q</code></td>
+<td>string</td>
+<td>Search query text</td>
+<td>Yes</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td>string</td>
+<td>Search mode: <code>niche</code>, <code>keywords</code>, <code>deep_niche</code>, <code>forums</code>,
+<code>tumblrish</code></td>
+<td>No</td>
+<td><code>niche</code></td>
+</tr>
+<tr>
+<td><code>fresh</code></td>
+<td>string</td>
+<td>Freshness filter: <code>d7</code> (7 days), <code>m1</code> (1 month), <code>m3</code> (3 months),
+<code>y1</code> (1 year), <code>all</code> (all time)</td>
+<td>No</td>
+<td><code>y1</code></td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>integer</td>
+<td>Maximum number of results (3-20)</td>
+<td>No</td>
+<td>10</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>string</td>
+<td>Duration filter (e.g., <code>5-12m</code>, <code>&lt;3m</code>, <code>&gt;10m</code>, <code>7:30</code>,
+<code>PT1H5M</code>)</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>site</code></td>
+<td>string</td>
+<td>Limit results to specific domain</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>hostMode</code></td>
+<td>string</td>
+<td><code>normal</code> or <code>relaxed</code></td>
+<td>No</td>
+<td><code>normal</code></td>
+</tr>
+<tr>
+<td><code>durationMode</code></td>
+<td>string</td>
+<td><code>normal</code> or <code>lenient</code></td>
+<td>No</td>
+<td><code>normal</code></td>
+</tr>
+<tr>
+<td><code>nocache</code></td>
+<td>boolean</td>
+<td>Set to <code>1</code> to bypass cache</td>
+<td>No</td>
+<td>—</td>
+</tr>
+</table>
+
+<h3>Example Request</h3>
+<pre><code>GET /aggregate?q=example+search&mode=niche&fresh=m1&limit=10</code></pre>
+
+<h3>Example Response</h3>
+<pre><code>{
+  "query": "example search",
+  "site": null,
+  "mode": "niche",
+  "durationQuery": null,
+  "freshness": "m1",
+  "results": [
+    {
+      "title": "Example Content",
+      "site": "example.com",
+      "url": "https://example.com/video/12345",
+      "runtime": "5:30",
+      "thumbnail": "https://example.com/thumb/12345.jpg",
+      "tags": ["tag1", "tag2"],
+      "notes": "search result"
+    }
+  ]
+}</code></pre>
+
+<h3>Error Responses</h3>
+<h4>Missing Query</h4>
+<pre><code>{
+  "error": "missing query",
+  "status": 400
+}</code></pre>
+
+<h4>Invalid Parameters</h4>
+<pre><code>{
+  "error": "invalid parameter: limit must be between 3 and 20",
+  "status": 400
+}</code></pre>
+
+<h4>Server Error</h4>
+<pre><code>{
+  "error": "an unexpected error occurred",
+  "requestId": "7f28c64a-9b2a-4b69-b7f1-8d94a4abf4e3",
+  "status": 500
+}</code></pre>
+
+<h2>Health Check API</h2>
+<p>Endpoint for monitoring the service health status.</p>
+
+<div class="endpoint">
+<span class="method">GET</span> /health
+</div>
+
+<h3>Example Response</h3>
+<pre><code>{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": "2025-08-29T00:15:22Z"
+}</code></pre>
+
+<h2>Usage Limits</h2>
+<p>
+The API currently does not implement strict rate limiting, but excessive usage may be restricted.
+For high-volume applications, please implement reasonable request throttling.
+</p>
+
+<h2>CORS Support</h2>
+<p>
+All API endpoints support Cross-Origin Resource Sharing (CORS) with the following headers:
+</p>
+<pre><code>Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With
+Access-Control-Max-Age: 86400</code></pre>
+
+<h2>Caching Behavior</h2>
+<p>
+Results are cached for 1 hour by default to improve performance and reduce load.
+Use the <code>nocache=1</code> parameter to bypass the cache for time-sensitive queries.
+</p>
+
+<div class="version-info">
+<p>API Version: 1.0.0 | Last Updated: August 2025</p>
+</div>
+</body>
+</html>`, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=3600"
+    }
+  });
+}
+
+// ---------------- Admin Panel HTML ----------------
+const ADMIN_PANEL_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Jack-GPT Admin</title>
+<style>
+:root {
+--bg: #0b0b0c;
+--panel: #12131a;
+--panel-2: #17181e;
+--panel-3: #1c1d26;
+--accent: #7f5af0;
+--accent-2: #6a48d0;
+--text: #e2e2e3;
+--muted: #9c9cb0;
+--good: #2cb67d;
+--bad: #ef4444;
+--warning: #ff9800;
+--radius: 8px;
+--transition: all 0.2s ease;
+}
+html, body {
+background: var(--bg);
+color: var(--text);
+line-height: 1.5;
+margin: 0;
+padding: 0;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.container {
+max-width: 1200px;
+margin: 0 auto;
+padding: 40px 20px;
+}
+.panel {
+background: var(--panel);
+border-radius: var(--radius);
+padding: 24px;
+margin-bottom: 24px;
+box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+h1, h2, h3 {
+margin-top: 0;
+}
+h2 {
+border-bottom: 1px solid var(--panel-3);
+padding-bottom: 12px;
+margin-bottom: 24px;
+display: flex;
+align-items: center;
+}
+h2 svg {
+margin-right: 12px;
+}
+input, select, textarea, button {
+background: var(--panel-2);
+border: 1px solid var(--panel-3);
+border-radius: var(--radius);
+color: var(--text);
+padding: 10px 16px;
+font-size: 16px;
+margin-bottom: 16px;
+width: 100%;
+box-sizing: border-box;
+transition: var(--transition);
+}
+input:focus, select:focus, textarea:focus {
+border-color: var(--accent);
+outline: none;
+box-shadow: 0 0 0 2px rgba(127, 90, 240, 0.2);
+}
+button {
+background: var(--accent);
+cursor: pointer;
+font-weight: 600;
+border: none;
+transition: var(--transition);
+}
+button:hover {
+background: var(--accent-2);
+}
+button.secondary {
+background: var(--panel-3);
+}
+button.secondary:hover {
+background: var(--panel-2);
+}
+button.danger {
+background: var(--bad);
+}
+button.danger:hover {
+background: #d63c3c;
+}
+label {
+display: block;
+margin-bottom: 8px;
+font-weight: 500;
+}
+.login-container {
+max-width: 400px;
+margin: 100px auto;
+}
+.item-list {
+margin-bottom: 24px;
+}
+.list-item {
+background: var(--panel-2);
+border-radius: var(--radius);
+padding: 16px;
+margin-bottom: 16px;
+position: relative;
+display: flex;
+justify-content: space-between;
+align-items: center;
+transition: var(--transition);
+}
+.list-item:hover {
+box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.item-disabled {
+opacity: 0.6;
+}
+.item-primary {
+font-weight: 600;
+font-size: 16px;
+}
+.item-secondary {
+color: var(--muted);
+font-size: 14px;
+margin-top: 4px;
+}
+.item-badge {
+display: inline-block;
+padding: 2px 8px;
+border-radius: 12px;
+font-size: 12px;
+background: var(--panel-3);
+margin-left: 8px;
+}
+.item-badge.content {
+background: rgba(127, 90, 240, 0.2);
+color: var(--accent);
+}
+.item-badge.source {
+background: rgba(44, 182, 125, 0.2);
+color: var(--good);
+}
+.item-badge.meta {
+background: rgba(255, 152, 0, 0.2);
+color: var(--warning);
+}
+.item-actions {
+display: flex;
+gap: 8px;
+}
+.item-actions button {
+width: auto;
+padding: 6px 10px;
+font-size: 14px;
+margin-bottom: 0;
+}
+.add-form {
+margin-top: 24px;
+background: var(--panel-2);
+padding: 20px;
+border-radius: var(--radius);
+}
+.form-row {
+display: flex;
+gap: 16px;
+margin-bottom: 8px;
+}
+.form-col {
+flex: 1;
+}
+.actions {
+display: flex;
+gap: 12px;
+justify-content: flex-end;
+margin-top: 16px;
+}
+.actions button {
+width: auto;
+margin-bottom: 0;
+}
+.notification {
+padding: 12px 16px;
+border-radius: var(--radius);
+margin-bottom: 16px;
+display: none;
+}
+.notification.success {
+background: rgba(44, 182, 125, 0.2);
+border: 1px solid rgba(44, 182, 125, 0.4);
+color: var(--good);
+display: block;
+}
+.notification.error {
+background: rgba(239, 68, 68, 0.2);
+border: 1px solid rgba(239, 68, 68, 0.4);
+color: var(--bad);
+display: block;
+}
+.logo {
+text-align: center;
+margin-bottom: 24px;
+font-size: 24px;
+font-weight: bold;
+color: var(--accent);
+}
+.hidden {
+display: none;
+}
+.header-actions {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 24px;
+}
+textarea {
+min-height: 120px;
+font-family: monospace;
+}
+.settings-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+gap: 20px;
+margin-bottom: 20px;
+}
+.setting-card {
+background: var(--panel-2);
+border-radius: var(--radius);
+padding: 16px;
+}
+.setting-card h4 {
+margin-top: 0;
+margin-bottom: 12px;
+font-size: 16px;
+}
+.setting-card p {
+color: var(--muted);
+font-size: 14px;
+margin-bottom: 16px;
+}
+.setting-card select,
+.setting-card input {
+margin-bottom: 0;
+}
+.tabs {
+display: flex;
+margin-bottom: 24px;
+border-bottom: 1px solid var(--panel-3);
+overflow-x: auto;
+scrollbar-width: thin;
+}
+.tab-button {
+padding: 12px 20px;
+background: none;
+border: none;
+border-bottom: 3px solid transparent;
+color: var(--muted);
+font-weight: 600;
+cursor: pointer;
+margin-bottom: 0;
+width: auto;
+}
+.tab-button.active {
+color: var(--accent);
+border-bottom-color: var(--accent);
+}
+.tab-content {
+display: none;
+}
+.tab-content.active {
+display: block;
+}
+.search-box {
+position: relative;
+margin-bottom: 20px;
+}
+.search-box input {
+padding-left: 40px;
+}
+.search-icon {
+position: absolute;
+left: 12px;
+top: 50%;
+transform: translateY(-50%);
+color: var(--muted);
+}
+.tooltip {
+position: relative;
+display: inline-block;
+margin-left: 8px;
+cursor: help;
+}
+.tooltip-icon {
+color: var(--muted);
+font-size: 16px;
+width: 16px;
+height: 16px;
+text-align: center;
+line-height: 16px;
+border-radius: 50%;
+background: var(--panel-3);
+}
+.tooltip-text {
+visibility: hidden;
+width: 240px;
+background: var(--panel);
+color: var(--text);
+text-align: left;
+border-radius: var(--radius);
+padding: 10px 14px;
+position: absolute;
+z-index: 1;
+bottom: 125%;
+left: 50%;
+transform: translateX(-50%);
+opacity: 0;
+transition: opacity 0.3s;
+font-weight: normal;
+font-size: 14px;
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+pointer-events: none;
+}
+.tooltip:hover .tooltip-text {
+visibility: visible;
+opacity: 1;
+}
+.checkbox-container {
+display: flex;
+align-items: center;
+}
+.checkbox-container input {
+width: auto;
+margin-right: 8px;
+margin-bottom: 0;
+}
+.info-box {
+background: rgba(127, 90, 240, 0.1);
+border-left: 4px solid var(--accent);
+padding: 12px 16px;
+margin-bottom: 20px;
+border-radius: 0 var(--radius) var(--radius) 0;
+}
+.info-box p {
+margin: 0;
+color: var(--text);
+}
+.empty-state {
+text-align: center;
+padding: 40px 0;
+color: var(--muted);
+}
+.empty-state svg {
+width: 64px;
+height: 64px;
+margin-bottom: 16px;
+color: var(--panel-3);
+}
+.empty-state h4 {
+margin: 0 0 8px 0;
+color: var(--text);
+}
+.empty-state p {
+margin: 0 0 20px 0;
+}
+.pagination {
+display: flex;
+justify-content: center;
+margin-top: 20px;
+gap: 8px;
+}
+.pagination button {
+width: auto;
+margin-bottom: 0;
+}
+.counter {
+background: var(--panel-3);
+border-radius: 12px;
+padding: 2px 8px;
+font-size: 14px;
+margin-left: 8px;
+}
+@media (max-width: 768px) {
+.container {
+padding: 20px;
+}
+.form-row {
+flex-direction: column;
+gap: 0;
+}
+.actions {
+flex-direction: column;
+}
+.list-item {
+flex-direction: column;
+align-items: flex-start;
+}
+.item-actions {
+margin-top: 12px;
+width: 100%;
+justify-content: flex-end;
+}
+.settings-grid {
+grid-template-columns: 1fr;
+}
+.tab-button {
+padding: 10px 16px;
+font-size: 14px;
+}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<div id="login-panel" class="login-container panel">
+<div class="logo">Jack-GPT Admin</div>
+<div id="login-notification" class="notification"></div>
+<form id="login-form">
+<div>
+<label for="username">Username</label>
+<input type="text" id="username" name="username" required>
+</div>
+<div>
+<label for="accessKey">Access Key</label>
+<input type="password" id="accessKey" name="accessKey" required>
+</div>
+<button type="submit">Log In</button>
+</form>
+</div>
+<div id="admin-panel" class="hidden">
+<div class="header-actions">
+<h1>Jack-GPT Admin Panel</h1>
+<button id="logout-btn" class="secondary">Log Out</button>
+</div>
+<div id="admin-notification" class="notification"></div>
+<div class="tabs">
+<button class="tab-button active" data-tab="sources">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;
+vertical-align: -3px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12
+2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+Sources
+</button>
+<button class="tab-button" data-tab="filters">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;
+vertical-align: -3px;"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+Content Filters
+</button>
+<button class="tab-button" data-tab="settings">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;
+vertical-align: -3px;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0
+1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0
+1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0
+0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0
+0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0
+1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0
+2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51
+1z"></path></svg>
+Settings
+</button>
+<button class="tab-button" data-tab="bulk">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;
+vertical-align: -3px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17
+10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+Bulk Operations
+</button>
+</div>
+<div id="sources-tab" class="tab-content active">
+<div class="panel">
+<h2>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12"
+r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10
+15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+Custom Search Sources
+<span class="counter" id="sources-counter">0</span>
+</h2>
+<div class="info-box">
+<p>Add custom domains to include in searches. These domains will be prioritized in search results based on
+your settings.</p>
+</div>
+<div class="search-box">
+<div class="search-icon">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11"
+r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+</div>
+<input type="text" id="search-sources" placeholder="Search sources...">
+</div>
+<div id="sources-list" class="item-list">
+<!-- Sources will be populated here -->
+<div class="loading">Loading sources...</div>
+</div>
+<div class="add-form">
+<h3>Add New Source</h3>
+<form id="source-form">
+<div class="form-row">
+<div class="form-col">
+<label for="source-name">Name</label>
+<input type="text" id="source-name" placeholder="My Custom Source" required>
+</div>
+<div class="form-col">
+<label for="source-domain">
+Domain
+<span class="tooltip">
+<span class="tooltip-icon">?</span>
+<span class="tooltip-text">Enter domain without 'http://' or 'www.' (e.g., example.com)</span>
+</span>
+</label>
+<input type="text" id="source-domain" placeholder="example.com" required>
+</div>
+</div>
+<div class="form-row">
+<div class="form-col">
+<label for="source-mode">Search Mode</label>
+<select id="source-mode">
+<option value="all">All Modes</option>
+<option value="niche">Niche</option>
+<option value="keywords">Keywords</option>
+<option value="deep_niche">Deep Niche</option>
+<option value="forums">Forums</option>
+<option value="tumblrish">Tumblrish</option>
+</select>
+</div>
+<div class="form-col">
+<label for="source-priority">Priority</label>
+<select id="source-priority">
+<option value="high">High</option>
+<option value="normal" selected>Normal</option>
+<option value="low">Low</option>
+</select>
+</div>
+</div>
+<div class="actions">
+<button type="submit">Add Source</button>
+</div>
+</form>
+</div>
+</div>
+</div>
+<div id="filters-tab" class="tab-content">
+<div class="panel">
+<h2>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46
+10 19 14 21 14 12.46 22 3"></polygon></svg>
+Content Filtering
+</h2>
+<div class="info-box">
+<p>Manage terms used to filter search results. Negative terms exclude unwanted content, while positive terms
+boost relevant content.</p>
+</div>
+<div class="tabs">
+<button class="tab-button active" data-subtab="negative">Negative Terms <span class="counter" id="negative-counter">0</span></button>
+<button class="tab-button" data-subtab="positive">Positive Terms <span class="counter" id="positive-counter">0</span></button>
+</div>
+<div id="negative-subtab" class="tab-content active">
+<div class="search-box">
+<div class="search-icon">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11"
+r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+</div>
+<input type="text" id="search-negative" placeholder="Search negative terms...">
+</div>
+<div id="negative-terms-list" class="item-list">
+<!-- Negative terms will be populated here -->
+</div>
+<div class="add-form">
+<h3>Add Negative Term</h3>
+<form id="negative-term-form">
+<div class="form-row">
+<div class="form-col">
+<label for="negative-term">Term to Filter Out</label>
+<input type="text" id="negative-term" placeholder="Enter term to exclude" required>
+</div>
+<div class="form-col">
+<label for="negative-category">Category</label>
+<select id="negative-category">
+<option value="content">Content</option>
+<option value="site">Site Specific</option>
+<option value="meta">Metadata</option>
+</select>
+</div>
+</div>
+<div class="actions">
+<button type="submit">Add Term</button>
+</div>
+</form>
+</div>
+</div>
+<div id="positive-subtab" class="tab-content">
+<div class="search-box">
+<div class="search-icon">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11"
+r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+</div>
+<input type="text" id="search-positive" placeholder="Search positive terms...">
+</div>
+<div id="positive-terms-list" class="item-list">
+<!-- Positive terms will be populated here -->
+</div>
+<div class="add-form">
+<h3>Add Positive Term</h3>
+<form id="positive-term-form">
+<div class="form-row">
+<div class="form-col">
+<label for="positive-term">Term to Prioritize</label>
+<input type="text" id="positive-term" placeholder="Enter term to prioritize" required>
+</div>
+<div class="form-col">
+<label for="positive-category">Category</label>
+<select id="positive-category">
+<option value="content">Content</option>
+<option value="site">Site Specific</option>
+<option value="meta">Metadata</option>
+</select>
+</div>
+</div>
+<div class="actions">
+<button type="submit">Add Term</button>
+</div>
+</form>
+</div>
+</div>
+</div>
+</div>
+<div id="settings-tab" class="tab-content">
+<div class="panel">
+<h2>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12"
+r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0
+0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0
+0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0
+1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83
+0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65
+1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51
+1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+Filter Settings
+</h2>
+<div class="info-box">
+<p>Configure how the content filtering system works. These settings affect the strictness and behavior of
+the filter.</p>
+</div>
+<div class="settings-grid">
+<div class="setting-card">
+<h4>Filter Strength</h4>
+<p>Controls how aggressively unwanted content is filtered out.</p>
+<select id="filter-strength">
+<option value="light">Light (Less Filtering)</option>
+<option value="moderate" selected>Moderate (Balanced)</option>
+<option value="strict">Strict (More Filtering)</option>
+</select>
+</div>
+<div class="setting-card">
+<h4>Confidence Threshold</h4>
+<p>Minimum confidence score for a result to be included.</p>
+<select id="confidence-threshold">
+<option value="0.5">Low (50%)</option>
+<option value="0.7" selected>Medium (70%)</option>
+<option value="0.9">High (90%)</option>
+</select>
+</div>
+<div class="setting-card">
+<h4>Content Requirements</h4>
+<p>Determines if results must match positive terms.</p>
+<div class="checkbox-container">
+<input type="checkbox" id="require-positive-match">
+<label for="require-positive-match">Require at least one positive term match</label>
+</div>
+</div>
+<div class="setting-card">
+<h4>Source Priority</h4>
+<p>Controls how custom sources are ranked in results.</p>
+<div class="checkbox-container">
+<input type="checkbox" id="prioritize-custom-sources" checked>
+<label for="prioritize-custom-sources">Prioritize custom sources in results</label>
+</div>
+</div>
+</div>
+<div class="actions">
+<button id="save-settings">Save Settings</button>
+<button id="reset-settings" class="secondary">Reset to Defaults</button>
+</div>
+</div>
+</div>
+<div id="bulk-tab" class="tab-content">
+<div class="panel">
+<h2>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2
+2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12"
+y2="3"></line></svg>
+Bulk Operations
+</h2>
+<div class="info-box">
+<p>Import and export your configuration for backup or to transfer settings between environments.</p>
+</div>
+<div class="tabs">
+<button class="tab-button active" data-subtab="export">Export</button>
+<button class="tab-button" data-subtab="import">Import</button>
+</div>
+<div id="export-subtab" class="tab-content active">
+<h3>Export Configuration</h3>
+<p class="muted">Select what you want to export:</p>
+<div class="form-row" style="margin-bottom: 20px;">
+<div class="form-col">
+<div class="checkbox-container">
+<input type="checkbox" id="export-sources" checked>
+<label for="export-sources">Custom Sources</label>
+</div>
+</div>
+<div class="form-col">
+<div class="checkbox-container">
+<input type="checkbox" id="export-filters" checked>
+<label for="export-filters">Content Filters</label>
+</div>
+</div>
+<div class="form-col">
+<div class="checkbox-container">
+<input type="checkbox" id="export-settings" checked>
+<label for="export-settings">Filter Settings</label>
+</div>
+</div>
+</div>
+<div class="form-row">
+<div class="form-col">
+<label for="export-json">Configuration JSON</label>
+<textarea id="export-json" readonly placeholder="Your configuration will appear here..."></textarea>
+</div>
+</div>
+<div class="actions">
+<button id="export-btn">Generate Export</button>
+<button id="copy-export-btn" class="secondary">Copy to Clipboard</button>
+</div>
+</div>
+<div id="import-subtab" class="tab-content">
+<h3>Import Configuration</h3>
+<p class="muted">Paste your configuration JSON below:</p>
+<div class="form-row">
+<div class="form-col">
+<label for="import-json">Configuration JSON</label>
+<textarea id="import-json" placeholder="Paste configuration JSON here..."></textarea>
+</div>
+</div>
+<div class="form-row" style="margin-bottom: 20px;">
+<div class="form-col">
+<div class="checkbox-container">
+<input type="checkbox" id="import-sources" checked>
+<label for="import-sources">Import Custom Sources</label>
+</div>
+</div>
+<div class="form-col">
+<div class="checkbox-container">
+<input type="checkbox" id="import-filters" checked>
+<label for="import-filters">Import Content Filters</label>
+</div>
+</div>
+<div class="form-col">
+<div class="checkbox-container">
+<input type="checkbox" id="import-settings" checked>
+<label for="import-settings">Import Filter Settings</label>
+</div>
+</div>
+</div>
+<div class="actions">
+<button id="import-btn">Import Configuration</button>
+<button id="validate-import-btn" class="secondary">Validate JSON</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+// State management
+let currentSources = [];
+let currentNegativeTerms = [];
+let currentPositiveTerms = [];
+let currentFilterSettings = {};
+
+// DOM elements
+const loginPanel = document.getElementById('login-panel');
+const adminPanel = document.getElementById('admin-panel');
+const loginForm = document.getElementById('login-form');
+const loginNotification = document.getElementById('login-notification');
+const adminNotification = document.getElementById('admin-notification');
+const sourcesList = document.getElementById('sources-list');
+const negativeTermsList = document.getElementById('negative-terms-list');
+const positiveTermsList = document.getElementById('positive-terms-list');
+const sourceForm = document.getElementById('source-form');
+const negativeTermForm = document.getElementById('negative-term-form');
+const positiveTermForm = document.getElementById('positive-term-form');
+const logoutBtn = document.getElementById('logout-btn');
+const exportJson = document.getElementById('export-json');
+const importJson = document.getElementById('import-json');
+const exportBtn = document.getElementById('export-btn');
+const importBtn = document.getElementById('import-btn');
+const copyExportBtn = document.getElementById('copy-export-btn');
+const validateImportBtn = document.getElementById('validate-import-btn');
+const saveSettingsBtn = document.getElementById('save-settings');
+const resetSettingsBtn = document.getElementById('reset-settings');
+const sourcesCounter = document.getElementById('sources-counter');
+const negativeCounter = document.getElementById('negative-counter');
+const positiveCounter = document.getElementById('positive-counter');
+const searchSources = document.getElementById('search-sources');
+const searchNegative = document.getElementById('search-negative');
+const searchPositive = document.getElementById('search-positive');
+
+// Main tab navigation
+const tabButtons = document.querySelectorAll('.tabs > .tab-button');
+const tabContents = document.querySelectorAll('.tab-content');
+
+tabButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    const tabName = button.getAttribute('data-tab');
+    
+    // Hide all tabs and remove active class
+    tabButtons.forEach(btn => btn.classList.remove('active'));
+    tabContents.forEach(content => content.classList.remove('active'));
+    
+    // Show selected tab and add active class
+    button.classList.add('active');
+    document.getElementById(tabName + '-tab').classList.add('active');
+  });
+});
+
+// Subtab navigation (for content filters)
+const setupSubtabs = (parentSelector) => {
+  const subtabButtons = document.querySelectorAll(parentSelector + ' [data-subtab]');
+  const subtabContents = document.querySelectorAll(parentSelector + ' .tab-content');
+  
+  subtabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const subtabName = button.getAttribute('data-subtab');
+      
+      // Hide all subtabs and remove active class
+      subtabButtons.forEach(btn => btn.classList.remove('active'));
+      subtabContents.forEach(content => content.classList.remove('active'));
+      
+      // Show selected subtab and add active class
+      button.classList.add('active');
+      document.getElementById(subtabName + '-subtab').classList.add('active');
+    });
+  });
+};
+
+setupSubtabs('#filters-tab');
+setupSubtabs('#bulk-tab');
+
+// Check for existing session
+function checkSession() {
+  if (validateAdminSession()) {
+    showAdminPanel();
+    loadAllData();
+  }
+}
+
+// Load all data from storage
+function loadAllData() {
+  loadSources();
+  loadFilterConfig();
+  updateCounters();
+}
+
+// Update counters
+function updateCounters() {
+  sourcesCounter.textContent = currentSources.length;
+  negativeCounter.textContent = currentNegativeTerms.length;
+  positiveCounter.textContent = currentPositiveTerms.length;
+}
+
+// Show notifications
+function showLoginNotification(message, isError) {
+  loginNotification.textContent = message;
+  loginNotification.className = 'notification';
+  loginNotification.classList.add(isError ? 'error' : 'success');
+  
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    loginNotification.className = 'notification';
+  }, 5000);
+}
+
+function showAdminNotification(message, isError) {
+  adminNotification.textContent = message;
+  adminNotification.className = 'notification';
+  adminNotification.classList.add(isError ? 'error' : 'success');
+  
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    adminNotification.className = 'notification';
+  }, 5000);
+}
+
+// Authentication
+async function login(username, accessKey) {
+  try {
+    const isValid = await verifyAdminCredentials(username, accessKey);
+    if (!isValid) {
+      throw new Error('Invalid credentials');
+    }
+    
+    createAdminSession(username);
+    showAdminPanel();
+    loadAllData();
+    return true;
+  } catch (error) {
+    showLoginNotification(error.message || 'Authentication failed', true);
+    return false;
+  }
+}
+
+function logout() {
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+  showLoginPanel();
+}
+
+// UI management
+function showLoginPanel() {
+  loginPanel.classList.remove('hidden');
+  adminPanel.classList.add('hidden');
+}
+
+function showAdminPanel() {
+  loginPanel.classList.add('hidden');
+  adminPanel.classList.remove('hidden');
+}
+
+// Sources management
+function loadSources() {
+  try {
+    sourcesList.innerHTML = '<div class="loading">Loading sources...</div>';
+    const config = loadSourcesConfig();
+    currentSources = config.sources || [];
+    renderSources();
+    return true;
+  } catch (error) {
+    showAdminNotification(error.message || 'Failed to load sources', true);
+    return false;
+  }
+}
+
+function renderSources(searchTerm = '') {
+  let filteredSources = currentSources;
+  
+  // Apply search filter if provided
+  if (searchTerm) {
+    const search = searchTerm.toLowerCase();
+    filteredSources = currentSources.filter(source =>
+      source.name.toLowerCase().includes(search) ||
+      source.domain.toLowerCase().includes(search)
+    );
+  }
+  
+  if (filteredSources.length === 0) {
+    sourcesList.innerHTML = `
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1
+4-10z"></path>
+        </svg>
+        <h4>No sources found</h4>
+        <p>Add your first source using the form below</p>
+      </div>
+    `;
+    return;
+  }
+  
+  sourcesList.innerHTML = filteredSources.map((source, index) => `
+    <div class="list-item ${!source.enabled ? 'item-disabled' : ''}" data-index="${index}">
+      <div class="item-content">
+        <div class="item-primary">${source.name}</div>
+        <div class="item-secondary">
+          ${source.domain}
+          <span class="item-badge ${source.mode === 'all' ? 'content' : 'source'}">${source.mode === 'all' ? 'All
+Modes' : source.mode}</span>
+          ${source.priority ? `<span class="item-badge">${source.priority} priority</span>` : ''}
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="remove-source-btn danger" data-index="${index}">Remove</button>
+        <button class="toggle-source-btn ${source.enabled ? '' : 'secondary'}" data-index="${index}">
+          ${source.enabled ? 'Disable' : 'Enable'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+  
+  // Add event listeners
+  document.querySelectorAll('.remove-source-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.target.dataset.index, 10);
+      removeSource(index);
+    });
+  });
+  
+  document.querySelectorAll('.toggle-source-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.target.dataset.index, 10);
+      toggleSource(index);
+    });
+  });
+}
+
+function saveAndRenderSources() {
+  const config = loadSourcesConfig();
+  config.sources = currentSources;
+  saveSourcesConfig(config);
+  renderSources();
+  updateCounters();
+}
+
+function addSource(name, domain, mode, priority, enabled) {
+  // Basic domain validation
+  domain = domain.toLowerCase().trim();
+  if (!/^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(domain)) {
+    showAdminNotification('Please enter a valid domain (e.g., example.com)', true);
+    return false;
+  }
+  
+  const newSource = {
+    name,
+    domain,
+    mode,
+    priority: priority || 'normal',
+    enabled: enabled === 'true' || enabled === true
+  };
+  
+  currentSources.push(newSource);
+  saveAndRenderSources();
+  showAdminNotification(`Added source: ${name}`, false);
+  return true;
+}
+
+function removeSource(index) {
+  if (confirm('Are you sure you want to remove this source?')) {
+    const name = currentSources[index].name;
+    currentSources.splice(index, 1);
+    saveAndRenderSources();
+    showAdminNotification(`Removed source: ${name}`, false);
+  }
+}
+
+function toggleSource(index) {
+  currentSources[index].enabled = !currentSources[index].enabled;
+  const status = currentSources[index].enabled ? 'Enabled' : 'Disabled';
+  const name = currentSources[index].name;
+  saveAndRenderSources();
+  showAdminNotification(`${status} source: ${name}`, false);
+}
+
+// Filter terms management
+function loadFilterConfig() {
+  try {
+    const config = loadFilterConfig();
+    currentNegativeTerms = config.negativeTerms || [];
+    currentPositiveTerms = config.positiveTerms || [];
+    currentFilterSettings = config.settings || {};
+    renderNegativeTerms();
+    renderPositiveTerms();
+    renderFilterSettings();
+    return true;
+  } catch (error) {
+    showAdminNotification(error.message || 'Failed to load filter configuration', true);
+    return false;
+  }
+}
+
+function renderNegativeTerms(searchTerm = '') {
+  let filteredTerms = currentNegativeTerms;
+  
+  // Apply search filter if provided
+  if (searchTerm) {
+    const search = searchTerm.toLowerCase();
+    filteredTerms = currentNegativeTerms.filter(term =>
+      term.term.toLowerCase().includes(search)
+    );
+  }
+  
+  if (filteredTerms.length === 0) {
+    negativeTermsList.innerHTML = `
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        <h4>No negative terms found</h4>
+        <p>Add terms to filter out unwanted content</p>
+      </div>
+    `;
+    return;
+  }
+  
+  negativeTermsList.innerHTML = filteredTerms.map((term, index) => `
+    <div class="list-item ${!term.enabled ? 'item-disabled' : ''}" data-index="${index}">
+      <div class="item-content">
+        <div class="item-primary">${term.term}</div>
+        <div class="item-secondary">
+          <span class="item-badge ${term.category}">${term.category}</span>
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="remove-negative-btn danger" data-index="${index}">Remove</button>
+        <button class="toggle-negative-btn ${term.enabled ? '' : 'secondary'}" data-index="${index}">
+          ${term.enabled ? 'Disable' : 'Enable'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+  
+  // Add event listeners
+  document.querySelectorAll('.remove-negative-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.target.dataset.index, 10);
+      removeNegativeTerm(index);
+    });
+  });
+  
+  document.querySelectorAll('.toggle-negative-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.target.dataset.index, 10);
+      toggleNegativeTerm(index);
+    });
+  });
+}
+
+function renderPositiveTerms(searchTerm = '') {
+  let filteredTerms = currentPositiveTerms;
+  
+  // Apply search filter if provided
+  if (searchTerm) {
+    const search = searchTerm.toLowerCase();
+    filteredTerms = currentPositiveTerms.filter(term =>
+      term.term.toLowerCase().includes(search)
+    );
+  }
+  
+  if (filteredTerms.length === 0) {
+    positiveTermsList.innerHTML = `
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        <h4>No positive terms found</h4>
+        <p>Add terms to prioritize relevant content</p>
+      </div>
+    `;
+    return;
+  }
+  
+  positiveTermsList.innerHTML = filteredTerms.map((term, index) => `
+    <div class="list-item ${!term.enabled ? 'item-disabled' : ''}" data-index="${index}">
+      <div class="item-content">
+        <div class="item-primary">${term.term}</div>
+        <div class="item-secondary">
+          <span class="item-badge ${term.category}">${term.category}</span>
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="remove-positive-btn danger" data-index="${index}">Remove</button>
+        <button class="toggle-positive-btn ${term.enabled ? '' : 'secondary'}" data-index="${index}">
+          ${term.enabled ? 'Disable' : 'Enable'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+  
+  // Add event listeners
+  document.querySelectorAll('.remove-positive-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.target.dataset.index, 10);
+      removePositiveTerm(index);
+    });
+  });
+  
+  document.querySelectorAll('.toggle-positive-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.target.dataset.index, 10);
+      togglePositiveTerm(index);
+    });
+  });
+}
+
+function renderFilterSettings() {
+  // Update UI to reflect current settings
+  document.getElementById('filter-strength').value = currentFilterSettings.filterStrength || 'moderate';
+  document.getElementById('confidence-threshold').value = currentFilterSettings.confidenceThreshold || '0.7';
+  document.getElementById('require-positive-match').checked = currentFilterSettings.requirePositiveMatch || false;
+  document.getElementById('prioritize-custom-sources').checked = currentFilterSettings.prioritizeCustomSources !== false; // Default to true
+}
+
+function saveFilterConfigToStorage() {
+  const config = {
+    version: 1,
+    lastUpdated: new Date().toISOString(),
+    negativeTerms: currentNegativeTerms,
+    positiveTerms: currentPositiveTerms,
+    settings: currentFilterSettings
+  };
+  
+  saveFilterConfig(config);
+  updateCounters();
+}
+
+function addNegativeTerm(term, category) {
+  if (!term || term.trim() === '') {
+    showAdminNotification('Please enter a valid term', true);
+    return false;
+  }
+  
+  const newTerm = {
+    id: generateId('n'),
+    term: term.trim(),
+    category: category || 'content',
+    enabled: true
+  };
+  
+  currentNegativeTerms.push(newTerm);
+  saveFilterConfigToStorage();
+  renderNegativeTerms();
+  showAdminNotification(`Added negative term: ${term}`, false);
+  return true;
+}
+
+function removeNegativeTerm(index) {
+  if (confirm('Are you sure you want to remove this term?')) {
+    const term = currentNegativeTerms[index].term;
+    currentNegativeTerms.splice(index, 1);
+    saveFilterConfigToStorage();
+    renderNegativeTerms();
+    showAdminNotification(`Removed negative term: ${term}`, false);
+  }
+}
+
+function toggleNegativeTerm(index) {
+  currentNegativeTerms[index].enabled = !currentNegativeTerms[index].enabled;
+  const status = currentNegativeTerms[index].enabled ? 'Enabled' : 'Disabled';
+  const term = currentNegativeTerms[index].term;
+  saveFilterConfigToStorage();
+  renderNegativeTerms();
+  showAdminNotification(`${status} negative term: ${term}`, false);
+}
+
+function addPositiveTerm(term, category) {
+  if (!term || term.trim() === '') {
+    showAdminNotification('Please enter a valid term', true);
+    return false;
+  }
+  
+  const newTerm = {
+    id: generateId('p'),
+    term: term.trim(),
+    category: category || 'content',
+    enabled: true
+  };
+  
+  currentPositiveTerms.push(newTerm);
+  saveFilterConfigToStorage();
+  renderPositiveTerms();
+  showAdminNotification(`Added positive term: ${term}`, false);
+  return true;
+}
+
+function removePositiveTerm(index) {
+  if (confirm('Are you sure you want to remove this term?')) {
+    const term = currentPositiveTerms[index].term;
+    currentPositiveTerms.splice(index, 1);
+    saveFilterConfigToStorage();
+    renderPositiveTerms();
+    showAdminNotification(`Removed positive term: ${term}`, false);
+  }
+}
+
+function togglePositiveTerm(index) {
+  currentPositiveTerms[index].enabled = !currentPositiveTerms[index].enabled;
+  const status = currentPositiveTerms[index].enabled ? 'Enabled' : 'Disabled';
+  const term = currentPositiveTerms[index].term;
+  saveFilterConfigToStorage();
+  renderPositiveTerms();
+  showAdminNotification(`${status} positive term: ${term}`, false);
+}
+
+function saveFilterSettings() {
+  currentFilterSettings = {
+    filterStrength: document.getElementById('filter-strength').value,
+    confidenceThreshold: parseFloat(document.getElementById('confidence-threshold').value),
+    requirePositiveMatch: document.getElementById('require-positive-match').checked,
+    prioritizeCustomSources: document.getElementById('prioritize-custom-sources').checked
+  };
+  
+  saveFilterConfigToStorage();
+  showAdminNotification('Filter settings saved successfully', false);
+}
+
+function resetFilterSettings() {
+  if (confirm('Are you sure you want to reset all filter settings to default?')) {
+    currentFilterSettings = DEFAULT_FILTER_CONFIG.settings;
+    renderFilterSettings();
+    saveFilterConfigToStorage();
+    showAdminNotification('Filter settings reset to defaults', false);
+  }
+}
+
+// Bulk operations
+function generateExport() {
+  try {
+    const exportSources = document.getElementById('export-sources').checked;
+    const exportFilters = document.getElementById('export-filters').checked;
+    const exportSettings = document.getElementById('export-settings').checked;
+    
+    if (!exportSources && !exportFilters && !exportSettings) {
+      showAdminNotification('Please select at least one component to export', true);
+      return;
+    }
+    
+    const exportData = {
+      version: 1,
+      exportDate: new Date().toISOString(),
+      creator: ADMIN_CONFIG.ownerUsername
+    };
+    
+    if (exportSources) {
+      exportData.sources = currentSources;
+    }
+    
+    if (exportFilters || exportSettings) {
+      exportData.filterConfig = {};
+      
+      if (exportFilters) {
+        exportData.filterConfig.negativeTerms = currentNegativeTerms;
+        exportData.filterConfig.positiveTerms = currentPositiveTerms;
       }
       
-      // Health check
-      if (path === "/health") {
-        return serveHealthCheck();
+      if (exportSettings) {
+        exportData.filterConfig.settings = currentFilterSettings;
+      }
+    }
+    
+    exportJson.value = JSON.stringify(exportData, null, 2);
+    showAdminNotification('Export generated successfully', false);
+  } catch (error) {
+    showAdminNotification('Export failed: ' + error.message, true);
+  }
+}
+
+function copyExportToClipboard() {
+  try {
+    exportJson.select();
+    document.execCommand('copy');
+    showAdminNotification('Copied to clipboard', false);
+  } catch (error) {
+    showAdminNotification('Copy failed: ' + error.message, true);
+    
+    // Fallback method
+    const textarea = document.createElement('textarea');
+    textarea.value = exportJson.value;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  }
+}
+
+function validateImportJson() {
+  try {
+    const jsonText = importJson.value.trim();
+    if (!jsonText) {
+      throw new Error('Please enter configuration JSON');
+    }
+    
+    const data = JSON.parse(jsonText);
+    if (!data.version) {
+      throw new Error('Invalid configuration format: missing version');
+    }
+    
+    // Check each section
+    if (data.sources && !Array.isArray(data.sources)) {
+      throw new Error('Invalid sources format: must be an array');
+    }
+    
+    if (data.filterConfig) {
+      if (data.filterConfig.negativeTerms && !Array.isArray(data.filterConfig.negativeTerms)) {
+        throw new Error('Invalid negative terms format: must be an array');
       }
       
-      // Version check
-      if (path === "/version.json") {
-        return serveVersionCheck();
+      if (data.filterConfig.positiveTerms && !Array.isArray(data.filterConfig.positiveTerms)) {
+        throw new Error('Invalid positive terms format: must be an array');
+      }
+      
+      if (data.filterConfig.settings && typeof data.filterConfig.settings !== 'object') {
+        throw new Error('Invalid settings format: must be an object');
+      }
+    }
+    
+    showAdminNotification('JSON validation successful', false);
+    return true;
+  } catch (error) {
+    showAdminNotification('Validation failed: ' + error.message, true);
+    return false;
+  }
+}
+
+function importConfiguration() {
+  try {
+    if (!validateImportJson()) {
+      return;
+    }
+    
+    const data = JSON.parse(importJson.value.trim());
+    const importSources = document.getElementById('import-sources').checked;
+    const importFilters = document.getElementById('import-filters').checked;
+    const importSettings = document.getElementById('import-settings').checked;
+    
+    if (!importSources && !importFilters && !importSettings) {
+      showAdminNotification('Please select at least one component to import', true);
+      return;
+    }
+    
+    // Import sources
+    if (importSources && data.sources) {
+      if (confirm(`Import ${data.sources.length} sources? This will overwrite any existing sources with the same domain.`)) {
+        // Merge with existing sources by domain
+        const domainMap = new Map();
+        
+        // Add existing sources to map
+        currentSources.forEach(source => {
+          domainMap.set(source.domain, source);
+        });
+        
+        // Add or replace with imported sources
+        data.sources.forEach(source => {
+          domainMap.set(source.domain, source);
+        });
+        
+        // Convert map back to array
+        currentSources = Array.from(domainMap.values());
+        saveAndRenderSources();
+      }
+    }
+    
+    // Import filter configuration
+    if (data.filterConfig) {
+      // Import negative terms
+      if (importFilters && data.filterConfig.negativeTerms) {
+        if (confirm(`Import ${data.filterConfig.negativeTerms.length} negative terms? This will merge with your existing terms.`)) {
+          // Create a set of existing terms to avoid duplicates
+          const existingTerms = new Set(currentNegativeTerms.map(t => t.term.toLowerCase()));
+          
+          // Add new terms that don't already exist
+          data.filterConfig.negativeTerms.forEach(term => {
+            if (!existingTerms.has(term.term.toLowerCase())) {
+              // Ensure the term has an ID
+              if (!term.id) {
+                term.id = generateId('n');
+              }
+              
+              currentNegativeTerms.push(term);
+              existingTerms.add(term.term.toLowerCase());
+            }
+          });
+          
+          renderNegativeTerms();
+        }
+      }
+      
+      // Import positive terms
+      if (importFilters && data.filterConfig.positiveTerms) {
+        if (confirm(`Import ${data.filterConfig.positiveTerms.length} positive terms? This will merge with your existing terms.`)) {
+          // Create a set of existing terms to avoid duplicates
+          const existingTerms = new Set(currentPositiveTerms.map(t => t.term.toLowerCase()));
+          
+          // Add new terms that don't already exist
+          data.filterConfig.positiveTerms.forEach(term => {
+            if (!existingTerms.has(term.term.toLowerCase())) {
+              // Ensure the term has an ID
+              if (!term.id) {
+                term.id = generateId('p');
+              }
+              
+              currentPositiveTerms.push(term);
+              existingTerms.add(term.term.toLowerCase());
+            }
+          });
+          
+          renderPositiveTerms();
+        }
+      }
+      
+      // Import settings
+      if (importSettings && data.filterConfig.settings) {
+        if (confirm('Import filter settings? This will overwrite your existing settings.')) {
+          currentFilterSettings = { ...currentFilterSettings, ...data.filterConfig.settings };
+          renderFilterSettings();
+        }
+      }
+      
+      // Save changes
+      saveFilterConfigToStorage();
+    }
+    
+    showAdminNotification('Import completed successfully', false);
+    updateCounters();
+  } catch (error) {
+    showAdminNotification('Import failed: ' + error.message, true);
+  }
+}
+
+// Search functionality for lists
+function setupSearchListeners() {
+  // Source search
+  searchSources.addEventListener('input', (e) => {
+    const searchTerm = e.
+
+    const searchTerm = e.target.value.trim();
+    renderSources(searchTerm);
+  });
+  
+  // Negative terms search
+  searchNegative.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.trim();
+    renderNegativeTerms(searchTerm);
+  });
+  
+  // Positive terms search
+  searchPositive.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.trim();
+    renderPositiveTerms(searchTerm);
+  });
+}
+
+// Event listeners
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('username').value;
+  const accessKey = document.getElementById('accessKey').value;
+  await login(username, accessKey);
+});
+
+logoutBtn.addEventListener('click', () => {
+  logout();
+});
+
+sourceForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const success = addSource(
+    document.getElementById('source-name').value,
+    document.getElementById('source-domain').value,
+    document.getElementById('source-mode').value,
+    document.getElementById('source-priority').value,
+    'true' // Enabled by default
+  );
+  
+  if (success) {
+    // Reset form
+    document.getElementById('source-name').value = '';
+    document.getElementById('source-domain').value = '';
+    document.getElementById('source-mode').value = 'all';
+    document.getElementById('source-priority').value = 'normal';
+  }
+});
+
+negativeTermForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const success = addNegativeTerm(
+    document.getElementById('negative-term').value,
+    document.getElementById('negative-category').value
+  );
+  
+  if (success) {
+    // Reset form
+    document.getElementById('negative-term').value = '';
+    document.getElementById('negative-category').value = 'content';
+  }
+});
+
+positiveTermForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const success = addPositiveTerm(
+    document.getElementById('positive-term').value,
+    document.getElementById('positive-category').value
+  );
+  
+  if (success) {
+    // Reset form
+    document.getElementById('positive-term').value = '';
+    document.getElementById('positive-category').value = 'content';
+  }
+});
+
+exportBtn.addEventListener('click', () => {
+  generateExport();
+});
+
+copyExportBtn.addEventListener('click', () => {
+  copyExportToClipboard();
+});
+
+validateImportBtn.addEventListener('click', () => {
+  validateImportJson();
+});
+
+importBtn.addEventListener('click', () => {
+  importConfiguration();
+});
+
+saveSettingsBtn.addEventListener('click', () => {
+  saveFilterSettings();
+});
+
+resetSettingsBtn.addEventListener('click', () => {
+  resetFilterSettings();
+});
+
+// Initialize
+checkSession();
+setupSearchListeners();
+</script>
+</body>
+</html>`;
+
+// ---------------- Main UI HTML ----------------
+const PORTAL_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes" />
+<title>Jack Portal</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0b0c">
+<meta name="description" content="Advanced content search interface">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
+<style>
+:root {
+--bg: #0b0b0c;
+--panel: #12131a;
+--panel-2: #17181e;
+--panel-3: #1c1d26;
+--accent: #7f5af0;
+--text: #e2e2e3;
+--muted: #9c9cb0;
+--good: #2cb67d;
+--bad: #ef4444;
+--radius: 8px;
+--max-width: 800px;
+--mobile-breakpoint: 640px;
+--small-breakpoint: 480px;
+--desktop-padding: 30px;
+--mobile-padding: 16px;
+--dynamic-island-spacing: 0px;
+--real-height: 100vh;
+}
+
+html, body {
+background: var(--bg);
+color: var(--text);
+line-height: 1.5;
+margin: 0;
+padding: 0;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.container {
+width: 100%;
+max-width: var(--max-width);
+margin: 0 auto;
+padding: var(--desktop-padding);
+box-sizing: border-box;
+}
+
+h2.title {
+font-weight: 600;
+margin: 0;
+margin-bottom: 16px;
+color: var(--text);
+}
+
+h3 {
+font-weight: 600;
+margin: 0;
+margin-bottom: 8px;
+color: var(--text);
+font-size: 16px;
+}
+
+a {
+color: var(--accent);
+text-decoration: none;
+}
+
+a:hover {
+text-decoration: underline;
+}
+
+label {
+display: block;
+font-size: 14px;
+margin-bottom: 6px;
+color: var(--muted);
+}
+
+input, select {
+width: 100%;
+padding: 10px 14px;
+background: var(--panel);
+border: 1px solid #1f2024;
+border-radius: var(--radius);
+color: var(--text);
+font-size: 15px;
+margin-bottom: 16px;
+transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus, select:focus {
+border-color: var(--accent);
+outline: none;
+box-shadow: 0 0 0 2px rgba(127, 90, 240, 0.2);
+}
+
+button {
+padding: 10px 20px;
+background: var(--accent);
+color: var(--text);
+border: none;
+border-radius: var(--radius);
+font-size: 15px;
+font-weight: 500;
+cursor: pointer;
+transition: filter 0.2s, transform 0.1s;
+}
+
+button:hover {
+filter: brightness(1.1);
+}
+
+button:active {
+transform: translateY(1px);
+}
+
+button.secondary {
+background: var(--panel-2);
+margin-left: 8px;
+}
+
+button:disabled {
+opacity: 0.6;
+cursor: not-allowed;
+}
+
+.actions {
+display: flex;
+margin-bottom: 24px;
+}
+
+.muted {
+color: var(--muted);
+font-size: 14px;
+}
+
+.result {
+margin-bottom: 16px;
+padding: 16px;
+background: var(--panel);
+border-radius: var(--radius);
+display: flex;
+transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.result:hover {
+transform: translateY(-2px);
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.thumb {
+width: 180px;
+height: 100px;
+background: var(--panel-2);
+border-radius: calc(var(--radius) - 2px);
+margin-right: 16px;
+flex-shrink: 0;
+background-size: cover;
+background-position: center;
+overflow: hidden;
+}
+
+.info {
+flex: 1;
+min-width: 0;
+}
+
+.title {
+font-weight: 600;
+margin-bottom: 4px;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+
+.site {
+color: var(--muted);
+font-size: 14px;
+margin-bottom: 8px;
+}
+
+.tags {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+margin-top: 8px;
+}
+
+.tag {
+padding: 3px 8px;
+border-radius: 12px;
+background: var(--panel-2);
+color: var(--muted);
+font-size: 12px;
+}
+
+.monospace {
+font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+font-size: 13px;
+white-space: pre-wrap;
+margin-top: 20px;
+padding: 12px;
+background: var(--panel);
+border-radius: var(--radius);
+overflow: auto;
+max-height: 400px;
+}
+
+.status {
+margin-left: 12px;
+font-size: 14px;
+color: var(--muted);
+}
+
+.hide {
+display: none;
+}
+
+.search-indicators {
+margin-top: 15px;
+padding: 12px;
+background: var(--panel-2);
+border-radius: var(--radius);
+border: 1px solid #1f2024;
+display: none;
+}
+
+.progress {
+height: 4px;
+width: 100%;
+background: var(--panel-2);
+border-radius: 2px;
+overflow: hidden;
+margin-top: 8px;
+}
+
+.progress-bar {
+height: 100%;
+width: 0%;
+background: var(--accent);
+transition: width 0.3s ease;
+}
+
+.chip {
+display: inline-block;
+padding: 4px 10px;
+background: var(--panel-2);
+border-radius: 16px;
+margin: 0 6px 6px 0;
+font-size: 13px;
+cursor: pointer;
+transition: background 0.2s;
+}
+
+.chip:hover {
+background: var(--panel-3);
+}
+
+.recent-searches {
+margin-top: 15px;
+display: none;
+}
+
+.chips {
+display: flex;
+flex-wrap: wrap;
+margin-top: 8px;
+}
+
+.error-message {
+color: var(--bad);
+background: rgba(239, 68, 68, 0.1);
+border: 1px solid rgba(239, 68, 68, 0.3);
+padding: 10px 14px;
+border-radius: 8px;
+margin: 10px 0;
+font-size: 14px;
+display: none;
+}
+
+.error-message.show {
+display: block;
+}
+
+.visually-hidden {
+position: absolute;
+width: 1px;
+height: 1px;
+padding: 0;
+margin: -1px;
+overflow: hidden;
+clip: rect(0, 0, 0, 0);
+white-space: nowrap;
+border-width: 0;
+}
+
+:focus-visible {
+outline: 2px solid var(--accent);
+outline-offset: 2px;
+}
+
+/* Modal styles */
+.modal {
+display: none;
+position: fixed;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+background-color: rgba(0, 0, 0, 0.5);
+z-index: 1000;
+overflow-y: auto;
+padding: 20px;
+box-sizing: border-box;
+backdrop-filter: blur(3px);
+}
+
+.modal.show {
+display: flex;
+align-items: center;
+justify-content: center;
+}
+
+.modal-content {
+background: var(--panel);
+border-radius: var(--radius);
+max-width: 560px;
+width: 100%;
+max-height: calc(100vh - 40px);
+overflow-y: auto;
+animation: modalFadeIn 0.3s;
+box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes modalFadeIn {
+from { opacity: 0; transform: translateY(-20px); }
+to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-header {
+padding: 16px;
+border-bottom: 1px solid var(--panel-3);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+
+.modal-header h3 {
+margin: 0;
+font-size: 18px;
+}
+
+.close-button {
+background: none;
+border: none;
+color: var(--muted);
+font-size: 24px;
+cursor: pointer;
+padding: 0;
+line-height: 1;
+}
+
+.modal-body {
+padding: 16px;
+max-height: 70vh;
+overflow-y: auto;
+}
+
+.modal-footer {
+padding: 16px;
+border-top: 1px solid var(--panel-3);
+display: flex;
+justify-content: flex-end;
+gap: 8px;
+}
+
+/* Tabs */
+.tabs {
+display: flex;
+border-bottom: 1px solid var(--panel-3);
+margin-bottom: 16px;
+overflow-x: auto;
+scrollbar-width: thin;
+}
+
+.tab-button {
+background: none;
+border: none;
+color: var(--muted);
+padding: 8px 16px;
+cursor: pointer;
+border-bottom: 2px solid transparent;
+font-size: 14px;
+margin: 0;
+white-space: nowrap;
+}
+
+.tab-button.active {
+color: var(--accent);
+border-bottom-color: var(--accent);
+}
+
+.tab-content {
+display: none;
+}
+
+.tab-content.active {
+display: block;
+}
+
+/* Preference items */
+.preference-group {
+margin-bottom: 24px;
+}
+
+.preference-group h4 {
+font-size: 15px;
+margin: 0 0 12px 0;
+color: var(--text);
+}
+
+.preference-item {
+margin-bottom: 12px;
+}
+
+.preference-item label {
+display: block;
+margin-bottom: 4px;
+}
+
+/* Grid view styles */
+.results-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+gap: 16px;
+}
+
+.checkbox-label {
+display: flex;
+align-items: center;
+cursor: pointer;
+}
+
+.checkbox-label input {
+margin-right: 8px;
+width: auto;
+}
+
+.results-grid .result {
+flex-direction: column;
+}
+
+.results-grid .thumb {
+width: 100%;
+height: 140px;
+margin-right: 0;
+margin-bottom: 12px;
+}
+
+/* Thumbnail sizes */
+.thumb-small {
+width: 120px !important;
+height: 67px !important;
+}
+
+.thumb-large {
+width: 240px !important;
+height: 135px !important;
+}
+
+.thumb-hidden {
+display: none !important;
+}
+
+/* Compact mode */
+.compact-mode .result {
+padding: 10px;
+margin-bottom: 10px;
+}
+
+.compact-mode .thumb {
+height: 80px;
+}
+
+.compact-mode .title {
+font-size: 14px;
+}
+
+.compact-mode .site {
+font-size: 12px;
+margin-bottom: 4px;
+}
+
+.compact-mode .tags .tag {
+padding: 2px 6px;
+font-size: 10px;
+}
+
+/* User preferences button */
+.user-preferences-button {
+display: inline-flex;
+align-items: center;
+margin-left: 8px;
+padding: 4px 8px;
+font-size: 13px;
+}
+
+.user-preferences-button svg {
+margin-right: 6px;
+width: 16px;
+height: 16px;
+}
+
+/* Theme styles */
+.theme-light {
+--bg: #f5f5f7;
+--panel: #ffffff;
+--panel-2: #f0f0f2;
+--panel-3: #e5e5e7;
+--text: #1c1c1e;
+--muted: #6b6b70;
+}
+
+.theme-dark {
+--bg: #0b0b0c;
+--panel: #12131a;
+--panel-2: #17181e;
+--panel-3: #1c1d26;
+--text: #e2e2e3;
+--muted: #9c9cb0;
+}
+
+/* Dynamic Island spacing (from Jack-script3) */
+.dynamic-island-spacer {
+height: var(--dynamic-island-spacing);
+width: 100%;
+}
+
+body.has-dynamic-island {
+--dynamic-island-spacing: 32px;
+}
+
+/* iOS optimizations from Jack-script3 */
+body.ios .modal-content {
+border-radius: 14px;
+}
+
+body.ios18 .modal-header,
+body.ios18 .search-indicators {
+backdrop-filter: saturate(120%) blur(10px);
+-webkit-backdrop-filter: saturate(120%) blur(10px);
+}
+
+/* Animations */
+@keyframes pulse {
+0% { opacity: 1; }
+50% { opacity: 0.5; }
+100% { opacity: 1; }
+}
+
+.skeleton {
+animation: pulse 1.5s ease-in-out infinite;
+background: var(--panel-2);
+border-radius: var(--radius);
+}
+
+/* Toast notifications */
+.toast-container {
+position: fixed;
+bottom: 20px;
+right: 20px;
+z-index: 9999;
+}
+
+.toast {
+background: var(--panel);
+color: var(--text);
+padding: 12px 16px;
+border-radius: var(--radius);
+margin-top: 10px;
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+display: flex;
+align-items: center;
+max-width: 300px;
+animation: toastIn 0.3s forwards;
+}
+
+.toast.hiding {
+animation: toastOut 0.3s forwards;
+}
+
+.toast svg {
+margin-right: 12px;
+flex-shrink: 0;
+}
+
+.toast.success svg {
+color: var(--good);
+}
+
+.toast.error svg {
+color: var(--bad);
+}
+
+.toast.offline svg {
+color: var(--bad);
+}
+
+.toast.online svg {
+color: var(--good);
+}
+
+@keyframes toastIn {
+from { opacity: 0; transform: translateY(20px); }
+to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastOut {
+from { opacity: 1; transform: translateY(0); }
+to { opacity: 0; transform: translateY(20px); }
+}
+
+/* Network status indicator (from Jack-script3) */
+.network-status {
+background: var(--bad);
+color: white;
+text-align: center;
+padding: 6px;
+position: fixed;
+top: 0;
+left: 0;
+right: 0;
+z-index: 9999;
+display: none;
+}
+
+/* Media queries for responsive design */
+@media (max-width: 640px) {
+.container {
+padding: var(--mobile-padding);
+}
+
+h2.title {
+font-size: 20px;
+}
+
+.actions {
+flex-direction: column;
+align-items: stretch;
+}
+
+.actions button {
+width: 100%;
+margin-right: 0;
+margin-bottom: 10px;
+margin-left: 0;
+}
+
+button.secondary {
+margin-left: 0;
+margin-top: 8px;
+}
+
+input, select {
+font-size: 16px; /* Prevents iOS zoom on focus */
+}
+
+.result {
+flex-direction: column;
+}
+
+.thumb {
+width: 100%;
+height: 120px;
+margin-right: 0;
+margin-bottom: 12px;
+}
+
+.status {
+display: block;
+margin-left: 0;
+margin-top: 8px;
+}
+
+.modal-content {
+width: calc(100% - 20px);
+}
+}
+
+/* iOS height fix (from Jack-script3) */
+@supports (-webkit-touch-callout: none) {
+.modal, .container {
+height: var(--real-height);
+}
+}
+
+/* Dark mode optimizations */
+@media (prefers-color-scheme: dark) {
+:root {
+color-scheme: dark;
+}
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+* {
+animation-duration: 0.01ms !important;
+animation-iteration-count: 1 !important;
+transition-duration: 0.01ms !important;
+scroll-behavior: auto !important;
+}
+}
+
+/* Skip to content for accessibility */
+.skip-link {
+position: absolute;
+top: -40px;
+left: 0;
+background: var(--accent);
+color: white;
+padding: 8px;
+z-index: 100;
+transition: top 0.3s;
+}
+
+.skip-link:focus {
+top: 0;
+}
+
+/* Print styles */
+@media print {
+body {
+background: white;
+color: black;
+}
+
+.container {
+max-width: 100%;
+padding: 0;
+}
+
+.actions, #debugToggle, .search-indicators, .recent-searches, #preferences-modal {
+display: none !important;
+}
+
+.result {
+break-inside: avoid;
+page-break-inside: avoid;
+border: 1px solid #ddd;
+margin-bottom: 15px;
+}
+
+a[href]:after {
+content: " (" attr(href) ")";
+font-size: 90%;
+color: #333;
+}
+}
+</style>
+</head>
+<body>
+<a href="#results" class="skip-link">Skip to content</a>
+<div class="container">
+<h2 class="title">Jack Portal</h2>
+<div id="error-container" class="error-message" role="alert"></div>
+<form id="searchForm" role="search" aria-label="Content search">
+<div>
+<label for="q" id="query-label">Query</label>
+<input id="q" type="search" placeholder="Type a query" aria-labelledby="query-label" required autocomplete="off" />
+</div>
+<div>
+<label for="mode" id="mode-label">Mode</label>
+<select id="mode" aria-labelledby="mode-label">
+<option value="niche">Niche</option>
+<option value="keywords">Keywords</option>
+<option value="deep_niche">Deep niche</option>
+<option value="forums">Forums</option>
+<option value="tumblrish">Tumblrish</option>
+</select>
+</div>
+<div>
+<label for="fresh" id="fresh-label">Freshness</label>
+<select id="fresh" aria-labelledby="fresh-label">
+<option value="d7">7 days</option>
+<option value="m1">1 month</option>
+<option value="m3">3 months</option>
+<option value="y1" selected>1 year</option>
+<option value="all">All time</option>
+</select>
+</div>
+<div class="actions">
+<button id="goBtn" type="submit" aria-label="Search content">Search</button>
+<button type="button" id="historyBtn" class="secondary">History</button>
+<button type="button" id="preferencesBtn" class="secondary user-preferences-button">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="12" cy="12" r="3"></circle>
+<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+</svg>
+Preferences
+</button>
+<button type="button" id="cancel-search-btn" class="secondary hide">Cancel</button>
+</div>
+</form>
+
+<div id="search-indicators" class="search-indicators">
+<div class="muted">Searching...</div>
+<div class="progress">
+<div id="progress-bar" class="progress-bar"></div>
+</div>
+</div>
+
+<div id="recent-searches" class="recent-searches">
+<h3>Recent Searches</h3>
+<div id="recent-chips" class="chips"></div>
+</div>
+
+<div id="results"></div>
+<div id="debug" class="monospace hide"></div>
+
+<!-- Preferences Modal -->
+<div id="preferences-modal" class="modal">
+<div class="modal-content">
+<div class="modal-header">
+<h3>Preferences</h3>
+<button type="button" class="close-button" id="close-preferences">&times;</button>
+</div>
+<div class="modal-body">
+<div class="tabs">
+<button class="tab-button active" data-tab="display">Display</button>
+<button class="tab-button" data-tab="search">Search</button>
+<button class="tab-button" data-tab="advanced">Advanced</button>
+</div>
+<div class="tab-content active" id="display-tab">
+<div class="preference-group">
+<h4>Appearance</h4>
+<div class="preference-item">
+<label for="pref-color-theme">Theme</label>
+<select id="pref-color-theme">
+<option value="system">System Default</option>
+<option value="light">Light</option>
+<option value="dark">Dark</option>
+</select>
+</div>
+<div class="preference-item">
+<label for="pref-display-mode">Results Layout</label>
+<select id="pref-display-mode">
+<option value="list">List View</option>
+<option value="grid">Grid View</option>
+</select>
+</div>
+<div class="preference-item">
+<label class="checkbox-label">
+<input type="checkbox" id="pref-compact-mode">
+Compact Mode
+</label>
+</div>
+</div>
+<div class="preference-group">
+<h4>Thumbnails</h4>
+<div class="preference-item">
+<label for="pref-thumbnail-size">Thumbnail Size</label>
+<select id="pref-thumbnail-size">
+<option value="small">Small</option>
+<option value="medium">Medium</option>
+<option value="large">Large</option>
+<option value="hidden">Hidden</option>
+</select>
+</div>
+</div>
+<div class="preference-group">
+<h4>Content Display</h4>
+<div class="preference-item">
+<label class="checkbox-label">
+<input type="checkbox" id="pref-show-tags">
+Show Tags
+</label>
+</div>
+<div class="preference-item">
+<label class="checkbox-label">
+<input type="checkbox" id="pref-show-runtime">
+Show Runtime
+</label>
+</div>
+</div>
+</div>
+<div class="tab-content" id="search-tab">
+<div class="preference-group">
+<h4>Default Search Settings</h4>
+<div class="preference-item">
+<label for="pref-default-mode">Default Mode</label>
+<select id="pref-default-mode">
+<option value="niche">Niche</option>
+<option value="keywords">Keywords</option>
+<option value="deep_niche">Deep niche</option>
+<option value="forums">Forums</option>
+<option value="tumblrish">Tumblrish</option>
+</select>
+</div>
+<div class="preference-item">
+<label for="pref-default-freshness">Default Freshness</label>
+<select id="pref-default-freshness">
+<option value="d7">7 days</option>
+<option value="m1">1 month</option>
+<option value="m3">3 months</option>
+<option value="y1">1 year</option>
+<option value="all">All time</option>
+</select>
+</div>
+<div class="preference-item">
+<label for="pref-default-limit">Results Per Page</label>
+<select id="pref-default-limit">
+<option value="5">5 results</option>
+<option value="10">10 results</option>
+<option value="15">15 results</option>
+<option value="20">20 results</option>
+</select>
+</div>
+</div>
+<div class="preference-group">
+<h4>Recent Searches</h4>
+<div class="preference-item">
+<label class="checkbox-label">
+<input type="checkbox" id="pref-enable-recent-searches">
+Enable Recent Searches
+</label>
+</div>
+<div class="preference-item">
+<label for="pref-max-recent-searches">Maximum Recent Searches</label>
+<select id="pref-max-recent-searches">
+<option value="3">3 searches</option>
+<option value="5">5 searches</option>
+<option value="10">10 searches</option>
+<option value="20">20 searches</option>
+</select>
+</div>
+<div class="preference-item">
+<button type="button" id="clear-recent-searches" class="secondary">Clear Search History</button>
+</div>
+</div>
+</div>
+<div class="tab-content" id="advanced-tab">
+<div class="preference-group">
+<h4>Browser Behavior</h4>
+<div class="preference-item">
+<label class="checkbox-label">
+<input type="checkbox" id="pref-open-links-in-new-tab">
+Open Links in New Tab
+</label>
+</div>
+</div>
+<div class="preference-group">
+<h4>Content Filtering</h4>
+<div class="preference-item">
+<label for="pref-filter-strength">Filter Strength</label>
+<select id="pref-filter-strength">
+<option value="light">Light (Less Filtering)</option>
+<option value="moderate">Moderate (Balanced)</option>
+<option value="strict">Strict (More Filtering)</option>
+</select>
+</div>
+<div class="preference-item">
+<label class="checkbox-label">
+<input type="checkbox" id="pref-apply-filters">
+Apply Content Filters
+</label>
+</div>
+</div>
+<div class="preference-group">
+<h4>Debug Options</h4>
+<div class="preference-item">
+<button type="button" id="debugToggle" class="secondary">Toggle Debug Panel</button>
+</div>
+</div>
+<div class="preference-group">
+<h4>Data Management</h4>
+<div class="preference-item">
+<button type="button" id="reset-preferences" class="secondary">Reset All Preferences</button>
+</div>
+</div>
+</div>
+</div>
+<div class="modal-footer">
+<button type="button" id="save-preferences">Save Preferences</button>
+<button type="button" id="cancel-preferences" class="secondary">Cancel</button>
+</div>
+</div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Network Status Indicator (from Jack-script3) -->
+<div id="network-status" class="network-status"></div>
+</div>
+
+<script>
+// DOM elements
+const searchForm = document.getElementById('searchForm');
+const qEl = document.getElementById('q');
+const modeEl = document.getElementById('mode');
+const freshEl = document.getElementById('fresh');
+const goBtn = document.getElementById('goBtn');
+const resultsEl = document.getElementById('results');
+const debugEl = document.getElementById('debug');
+const debugToggle = document.getElementById('debugToggle');
+const progressBar = document.getElementById('progress-bar');
+const searchIndicators = document.getElementById('search-indicators');
+const cancelSearchBtn = document.getElementById('cancel-search-btn');
+const preferencesBtn = document.getElementById('preferencesBtn');
+const preferencesModal = document.getElementById('preferences-modal');
+const closePreferences = document.getElementById('close-preferences');
+const savePreferences = document.getElementById('save-preferences');
+const cancelPreferences = document.getElementById('cancel-preferences');
+const historyBtn = document.getElementById('historyBtn');
+const recentSearches = document.getElementById('recent-searches');
+const recentChips = document.getElementById('recent-chips');
+const clearRecentSearches = document.getElementById('clear-recent-searches');
+const resetPreferences = document.getElementById('reset-preferences');
+const toastContainer = document.getElementById('toast-container');
+const errorContainer = document.getElementById('error-container');
+const networkStatus = document.getElementById('network-status');
+
+// Global state
+let searchTimeout = null;
+let currentSearchController = null;
+let userPreferences = getUserPreferences();
+
+// iOS detection (from Jack-script3)
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isIOS18 = isIOS && (/OS 18/.test(navigator.userAgent) || /Version\/18/.test(navigator.userAgent));
+const hasDynamicIsland = isIOS && /iPhone/.test(navigator.userAgent) && window.devicePixelRatio >= 3;
+
+// Apply iOS-specific optimizations
+if (isIOS) {
+  document.body.classList.add('ios');
+  
+  // Additional iOS 18 optimizations
+  if (isIOS18) {
+    document.body.classList.add('ios18');
+    
+    // Dynamic Island awareness
+    if (hasDynamicIsland && window.matchMedia('(display-mode: standalone)').matches) {
+      document.body.classList.add('has-dynamic-island');
+      const spacer = document.createElement('div');
+      spacer.className = 'dynamic-island-spacer';
+      document.body.insertBefore(spacer, document.body.firstChild);
+    }
+  }
+  
+  // Add viewport-fit=cover for notched devices
+  const metaViewport = document.querySelector('meta[name="viewport"]');
+  if (metaViewport && !metaViewport.content.includes('viewport-fit=cover')) {
+    metaViewport.content += ', viewport-fit=cover';
+  }
+  
+  // Fix 100vh issue on iOS
+  const fixHeight = () => {
+    document.documentElement.style.setProperty('--real-height', `${window.innerHeight}px`);
+  };
+  window.addEventListener('resize', fixHeight);
+  window.addEventListener('orientationchange', fixHeight);
+  fixHeight();
+}
+
+// Toast notification system
+function showToast(message, type = 'info', duration = 3000) {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  let icon = '';
+  
+  if (type === 'success') {
+    icon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+  } else if (type === 'error') {
+    icon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+  } else if (type === 'offline') {
+    icon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>`;
+  } else if (type === 'online') {
+    icon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>`;
+  } else {
+    icon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+  }
+  
+  toast.innerHTML = `${icon}<span>${message}</span>`;
+  toastContainer.appendChild(toast);
+  
+  // Automatically remove after duration
+  if (duration > 0) {
+    setTimeout(() => {
+      toast.classList.add('hiding');
+      // Remove from DOM after animation completes
+      setTimeout(() => {
+        if (toastContainer.contains(toast)) {
+          toastContainer.removeChild(toast);
+        }
+      }, 300);
+    }, duration);
+  }
+  
+  return toast;
+}
+
+// Function to set status text
+function setStatus(text) {
+  const statusEl = document.querySelector('.status');
+  if (!statusEl) {
+    const newStatus = document.createElement('span');
+    newStatus.className = 'status';
+    newStatus.textContent = text;
+    goBtn.parentNode.appendChild(newStatus);
+  } else {
+    statusEl.textContent = text;
+  }
+}
+
+// Show/hide error messages
+function showError(message) {
+  errorContainer.textContent = message;
+  errorContainer.classList.add('show');
+}
+
+function clearError() {
+  errorContainer.textContent = '';
+  errorContainer.classList.remove('show');
+}
+
+// Render search results with enhanced functionality from Jack-script3
+function render(results) {
+  if (!results || !results.length) {
+    resultsEl.innerHTML = '<div class="muted" style="text-align: center; padding: 30px 0;">No results found</div>';
+    return;
+  }
+  
+  // Get admin-defined custom sources
+  const sourcesConfig = loadSourcesConfig();
+  const customSources = sourcesConfig.sources || [];
+  
+  // Apply link extraction optimizations
+  const optimizedResults = extractUsableLinks(results, customSources);
+  
+  // Store processed results for re-rendering
+  window.lastSearchData = optimizedResults;
+  
+  // Determine if we should show grid or list view
+  const isGridView = userPreferences.displayMode === 'grid';
+  resultsEl.className = isGridView ? 'results-grid' : '';
+  
+  // Apply compact mode if enabled
+  document.body.classList.toggle('compact-mode', userPreferences.compactMode);
+  
+  // Create HTML for results
+  resultsEl.innerHTML = optimizedResults.map(r => {
+    const thumbnailClass = r.thumbnail ? ` thumb-${userPreferences.thumbnailSize}` : ' thumb-hidden';
+    const confidenceIndicator = r._confidence !== undefined ?
+      `<span class="muted" style="font-size: 12px; margin-left: 8px;">Score: ${r._confidence.toFixed(2)}</span>` :
+      '';
+    
+    return `
+      <div class="result${r._lowConfidence ? ' low-confidence' : ''}" data-url="${encodeURIComponent(r.url)}">
+        <div class="thumb${thumbnailClass}" style="background-image: url('${r.thumbnail || ''}')"></div>
+        <div class="info">
+          <div class="title">
+            <a href="${r.url}" target="${userPreferences.openLinksInNewTab ? '_blank' : '_self'}" rel="noopener noreferrer">
+              ${r.title}
+            </a>
+            ${debugEl.classList.contains('hide') ? '' : confidenceIndicator}
+          </div>
+          <div class="site">${r.site}${userPreferences.showRuntime && r.runtime ? ` • ${r.runtime}` : ''}</div>
+          ${userPreferences.showTags && r.tags && r.tags.length ? `
+            <div class="tags">
+              ${r.tags.map(t => `<span class="tag">${t}</span>`).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Add event listeners for results
+  document.querySelectorAll('.result').forEach(result => {
+    result.addEventListener('click', (e) => {
+      // Ignore clicks on links (handled by browser)
+      if (e.target.tagName === 'A') return;
+      
+      // For clicks on the result container, navigate to the URL
+      const url = decodeURIComponent(result.dataset.url);
+      if (url) {
+        if (userPreferences.openLinksInNewTab) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } else {
+          window.location.href = url;
+        }
+      }
+    });
+  });
+  
+  // Initialize lazy loading
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const result = entry.target;
+          
+          // Trigger animation
+          result.classList.add('visible');
+          
+          // Lazy load thumbnails
+          const thumb = result.querySelector('.thumb[style*="background-image"]');
+          if (thumb && !thumb.dataset.loaded) {
+            // Apply optimized image loading
+            const style = thumb.getAttribute('style');
+            if (style && style.includes('url(')) {
+              thumb.dataset.loaded = 'true';
+            }
+          }
+          
+          observer.unobserve(result);
+        }
+      });
+    }, {
+      rootMargin: '100px 0px',
+      threshold: 0.1
+    });
+    
+    document.querySelectorAll('.result').forEach(result => {
+      observer.observe(result);
+    });
+  }
+}
+
+// Enhanced search function with search service fallback from Jack-script3
+async function performSearch(query) {
+  // Cancel existing search if any
+  if (currentSearchController) {
+    currentSearchController.abort();
+  }
+  
+  // Create a new AbortController
+  currentSearchController = new AbortController();
+  const signal = currentSearchController.signal;
+  
+  try {
+    // Show search indicators
+    searchIndicators.style.display = 'block';
+    cancelSearchBtn.classList.remove('hide');
+    
+    // Animate progress bar
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+      progress += 5;
+      if (progress > 90) {
+        progress = 90; // Max out at 90% until complete
+      }
+      progressBar.style.width = `${progress}%`;
+    }, 200);
+    
+    // Build URL with parameters
+    const params = new URLSearchParams();
+    params.set("q", query);
+    params.set("mode", modeEl.value);
+    params.set("fresh", freshEl.value);
+    
+    // Add limit from preferences
+    if (userPreferences && userPreferences.defaultLimit) {
+      params.set("limit", userPreferences.defaultLimit.toString());
+    }
+    
+    // Get filter settings
+    const filterConfig = loadFilterConfig();
+    
+    // Add filter strength if enabled
+    if (userPreferences.applyFilters !== false) {
+      params.set("filterStrength", filterConfig.settings.filterStrength || 'moderate');
+    }
+    
+    // Add custom sources if any
+    const sourcesConfig = loadSourcesConfig();
+    const relevantSources = sourcesConfig.sources?.filter(source =>
+      source.enabled && (source.mode === 'all' || source.mode === modeEl.value)
+    ) || [];
+    
+    if (relevantSources.length > 0) {
+      // Convert to a comma-separated list of domains
+      const sourcesList = relevantSources.map(s => s.domain).join(',');
+      params.set("custom_sources", sourcesList);
+    }
+    
+    // Add request ID for tracking
+    const requestId = crypto.randomUUID();
+    params.set("requestId", requestId);
+    
+    // Perform fetch with abort signal
+    let response;
+    try {
+      response = await fetchWithRetry(`/aggregate?${params.toString()}`, {
+        signal,
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      }, 2);
+    } catch (fetchError) {
+      console.warn('Primary fetch failed, attempting with SearchService:', fetchError);
+      
+      // Create a SearchService instance as fallback (from Jack-script3)
+      const searchService = new SearchService({});
+      const fallbackResult = await searchService.search(query, {
+        limit: parseInt(userPreferences.defaultLimit) || 10,
+        fresh: freshEl.value,
+        country: 'us',
+        language: 'en'
+      });
+      
+      if (fallbackResult.success) {
+        return {
+          success: true,
+          data: {
+            results: fallbackResult.results,
+            query,
+            mode: modeEl.value,
+            fresh: freshEl.value
+          },
+          metadata: {
+            resultCount: fallbackResult.results.length,
+            originalCount: fallbackResult.results.length,
+            query,
+            mode: modeEl.value,
+            freshness: freshEl.value,
+            requestId,
+            provider: fallbackResult.provider
+          }
+        };
+      } else {
+        throw fetchError; // Re-throw if fallback fails too
+      }
+    }
+    
+    // Complete progress bar
+    clearInterval(progressInterval);
+    progressBar.style.width = '100%';
+    
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.error) {
+      return { success: false, error: data.error };
+    }
+    
+    // Apply client-side content filtering if enabled
+    let finalResults = data.results || [];
+    if (userPreferences.applyFilters !== false) {
+      finalResults = applyContentFilters(finalResults, filterConfig);
+    }
+    
+    // Process results
+    return {
+      success: true,
+      data: { ...data, results: finalResults },
+      metadata: {
+        resultCount: finalResults.length,
+        originalCount: data.results?.length || 0,
+        query,
+        mode: modeEl.value,
+        freshness: freshEl.value,
+        requestId
+      }
+    };
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return { success: false, aborted: true };
+    }
+    throw error;
+  } finally {
+    // Hide search indicators and reset
+    setTimeout(() => {
+      searchIndicators.style.display = 'none';
+      progressBar.style.width = '0%';
+      cancelSearchBtn.classList.add('hide');
+      currentSearchController = null;
+    }, 300);
+  }
+}
+
+// Save and retrieve recent searches
+function saveRecentSearch(query, resultCount) {
+  if (!userPreferences.enableRecentSearches) return;
+  
+  try {
+    const recentSearches = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || '[]');
+    
+    // Add new search to the beginning
+    recentSearches.unshift({
+      query,
+      timestamp: new Date().toISOString(),
+      resultCount,
+      mode: modeEl.value,
+      freshness: freshEl.value
+    });
+    
+    // Keep only the latest N searches
+    const maxSearches = userPreferences.maxRecentSearches || 5;
+    const trimmedSearches = recentSearches.slice(0, maxSearches);
+    
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(trimmedSearches));
+    
+    // Update the UI
+    renderRecentSearches();
+  } catch (error) {
+    console.error('Failed to save recent search', error);
+  }
+}
+
+function renderRecentSearches() {
+  if (!userPreferences.enableRecentSearches) {
+    recentSearches.style.display = 'none';
+    return;
+  }
+  
+  try {
+    const searches = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || '[]');
+    
+    if (searches.length === 0) {
+      recentSearches.style.display = 'none';
+      return;
+    }
+    
+    // Create chips for recent searches
+    recentChips.innerHTML = searches.map(search => `
+      <div class="chip" data-query="${search.query}" data-mode="${search.mode}" data-fresh="${search.freshness}">
+        ${search.query}
+        <span class="muted">(${search.resultCount})</span>
+      </div>
+    `).join('');
+    
+    // Add click event to chips
+    recentChips.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        qEl.value = chip.dataset.query;
+        modeEl.value = chip.dataset.mode;
+        freshEl.value = chip.dataset.fresh;
+        searchForm.dispatchEvent(new Event('submit'));
+      });
+    });
+    
+    // Show the recent searches section
+    recentSearches.style.display = 'block';
+  } catch (error) {
+    console.error('Failed to render recent searches', error);
+    recentSearches.style.display = 'none';
+  }
+}
+
+// Preferences system
+function applyPreferences() {
+  // Apply theme preference
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (userPreferences.colorTheme === 'light') {
+    document.body.classList.add('theme-light');
+    document.body.classList.remove('theme-dark');
+  } else if (userPreferences.colorTheme === 'dark') {
+    document.body.classList.add('theme-dark');
+    document.body.classList.remove('theme-light');
+  } else {
+    // System default
+    document.body.classList.toggle('theme-dark', prefersDark);
+    document.body.classList.toggle('theme-light', !prefersDark);
+  }
+  
+  // Apply compact mode
+  document.body.classList.toggle('compact-mode', userPreferences.compactMode);
+  
+  // Set default search options
+  if (userPreferences.defaultMode) {
+    modeEl.value = userPreferences.defaultMode;
+  }
+  
+  if (userPreferences.defaultFreshness) {
+    freshEl.value = userPreferences.defaultFreshness;
+  }
+  
+  // Re-render results if available
+  if (window.lastSearchData && window.lastSearchData.length) {
+    render(window.lastSearchData);
+  }
+}
+
+function populatePreferencesForm() {
+  // Display tab
+  document.getElementById('pref-color-theme').value = userPreferences.colorTheme || 'system';
+  document.getElementById('pref-display-mode').value = userPreferences.displayMode || 'list';
+  document.getElementById('pref-compact-mode').checked = userPreferences.compactMode || false;
+  document.getElementById('pref-thumbnail-size').value = userPreferences.thumbnailSize || 'medium';
+  document.getElementById('pref-show-tags').checked = userPreferences.showTags !== false; // Default to true
+  document.getElementById('pref-show-runtime').checked = userPreferences.showRuntime !== false; // Default to true
+  
+  // Search tab
+  document.getElementById('pref-default-mode').value = userPreferences.defaultMode || 'niche';
+  document.getElementById('pref-default-freshness').value = userPreferences.defaultFreshness || 'y1';
+  document.getElementById('pref-default-limit').value = userPreferences.defaultLimit || '10';
+  document.getElementById('pref-enable-recent-searches').checked = userPreferences.enableRecentSearches !== false; // Default to true
+  document.getElementById('pref-max-recent-searches').value = userPreferences.maxRecentSearches || '5';
+  
+  // Advanced tab
+  document.getElementById('pref-open-links-in-new-tab').checked = userPreferences.openLinksInNewTab !== false; // Default to true
+  document.getElementById('pref-filter-strength').value = userPreferences.filterStrength || 'moderate';
+  document.getElementById('pref-apply-filters').checked = userPreferences.applyFilters !== false; // Default to true
+}
+
+function collectPreferencesFromForm() {
+  // Create a new preferences object
+  const prefs = { ...userPreferences };
+  
+  // Display tab
+  prefs.colorTheme = document.getElementById('pref-color-theme').value;
+  prefs.displayMode = document.getElementById('pref-display-mode').value;
+  prefs.compactMode = document.getElementById('pref-compact-mode').checked;
+  prefs.thumbnailSize = document.getElementById('pref-thumbnail-size').value;
+  prefs.showTags = document.getElementById('pref-show-tags').checked;
+  prefs.showRuntime = document.getElementById('pref-show-runtime').checked;
+  
+  // Search tab
+  prefs.defaultMode = document.getElementById('pref-default-mode').value;
+  prefs.defaultFreshness = document.getElementById('pref-default-freshness').value;
+  prefs.defaultLimit = document.getElementById('pref-default-limit').value;
+  prefs.enableRecentSearches = document.getElementById('pref-enable-recent-searches').checked;
+  prefs.maxRecentSearches = document.getElementById('pref-max-recent-searches').value;
+  
+  // Advanced tab
+  prefs.openLinksInNewTab = document.getElementById('pref-open-links-in-new-tab').checked;
+  prefs.filterStrength = document.getElementById('pref-filter-strength').value;
+  prefs.applyFilters = document.getElementById('pref-apply-filters').checked;
+  
+  return prefs;
+}
+
+function initPreferencesSystem() {
+  // Load user preferences
+  userPreferences = getUserPreferences();
+  
+  // Add tab switching behavior
+  const tabButtons = document.querySelectorAll('.tab-button');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      // Remove active class from all buttons and contents
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+      
+      // Add active class to current button and its content
+      button.classList.add('active');
+      const tabName = button.dataset.tab;
+      document.getElementById(`${tabName}-tab`).classList.add('active');
+    });
+  });
+  
+  // Modal open/close handlers
+  preferencesBtn.addEventListener('click', () => {
+    populatePreferencesForm();
+    preferencesModal.classList.add('show');
+  });
+  
+  closePreferences.addEventListener('click', () => {
+    preferencesModal.classList.remove('show');
+  });
+  
+  cancelPreferences.addEventListener('click', () => {
+    preferencesModal.classList.remove('show');
+  });
+  
+  // Save preferences
+  savePreferences.addEventListener('click', () => {
+    const newPreferences = collectPreferencesFromForm();
+    userPreferences = newPreferences;
+    saveUserPreferences(newPreferences);
+    applyPreferences();
+    preferencesModal.classList.remove('show');
+    showToast('Preferences saved successfully', 'success');
+    
+    // Update recent searches display
+    renderRecentSearches();
+  });
+  
+  // Reset preferences
+  resetPreferences.addEventListener('click', () => {
+    if (confirm('Are you sure you want to reset all preferences to default?')) {
+      userPreferences = { ...DEFAULT_USER_PREFERENCES };
+      saveUserPreferences(userPreferences);
+      populatePreferencesForm();
+      applyPreferences();
+      showToast('Preferences reset to defaults', 'success');
+    }
+  });
+  
+  // Clear recent searches
+  clearRecentSearches.addEventListener('click', () => {
+    if (confirm('Are you sure you want to clear your search history?')) {
+      localStorage.removeItem(RECENT_SEARCHES_KEY);
+      renderRecentSearches();
+      showToast('Search history cleared', 'success');
+    }
+  });
+}
+
+// Enhanced form submission with debouncing and multi-provider fallback
+searchForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+  }
+  
+  const query = qEl.value.trim();
+  if (!query) {
+    showError("Please enter a search query");
+    setStatus("enter a query");
+    return;
+  }
+  
+  // Clear previous results and error messages
+  clearError();
+  goBtn.disabled = true;
+  setStatus("searching...");
+  resultsEl.innerHTML = "";
+  debugEl.textContent = "";
+  
+  // Show loading state
+  resultsEl.innerHTML = Array(5).fill(0).map(() => `
+    <div class="result skeleton">
+      <div class="thumb"></div>
+      <div class="info">
+        <div class="title" style="height: 20px; width: 80%; margin-bottom: 8px;"></div>
+        <div class="site" style="height: 14px; width: 60%;"></div>
+      </div>
+    </div>
+  `).join('');
+  
+  // Execute search with debouncing
+  searchTimeout = setTimeout(async () => {
+    try {
+      // Perform search
+      const result = await performSearch(query);
+      
+      if (result.success) {
+        // Store results for preference changes
+        window.lastSearchData = result.data.results || [];
+        
+        // Render results
+        render(result.data.results || []);
+        
+        // Update debug info if available
+        if (result.data.diag) {
+          const enhancedDiag
+
+      // Admin panel route
+      if (path === "/admin") {
+        return addCorsHeaders(new Response(ADMIN_PANEL_HTML, {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" }
+        }));
       }
       
       // Service worker
-      if (path === "/sw.js") {
-        return new Response(SW_JS, {
+      if (path === joinPath(BASE_PATH, "sw.js")) {
+        return addCorsHeaders(new Response(SW_JS, {
+          status: 200,
           headers: {
             "content-type": "application/javascript; charset=utf-8",
             "cache-control": "no-store"
           }
-        });
+        }));
       }
       
-      // App manifest (support both paths for compatibility)
-      if (path === "/manifest.json" || path === "/site.webmanifest") {
-        return new Response(MANIFEST_JSON, {
+      // Manifest (support both paths for compatibility)
+      if (path === joinPath(BASE_PATH, "site.webmanifest") || path === "/manifest.json") {
+        return addCorsHeaders(new Response(MANIFEST_JSON, {
+          status: 200,
           headers: {
-            "content-type": "application/manifest+json",
-            "cache-control": "public, max-age=86400"
+            "content-type": "application/manifest+json; charset=utf-8",
+            "cache-control": "public, max-age=3600"
           }
-        });
+        }));
       }
       
-      // Icon serving from GitHub
+      // Icons
       if (path === "/icon-192.png") {
-        return fetch(
-          "https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_192.png",
-          { 
-            headers: { 
-              "cache-control": "public, max-age=31536000, immutable" 
-            } 
+        const iconResponse = await fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_192.png");
+        return addCorsHeaders(new Response(await iconResponse.arrayBuffer(), {
+          headers: {
+            "content-type": "image/png",
+            "cache-control": "public, max-age=31536000, immutable"
           }
-        );
+        }));
       }
       
       if (path === "/icon-512.png") {
-        return fetch(
-          "https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_512.png",
-          { 
-            headers: { 
-              "cache-control": "public, max-age=31536000, immutable" 
-            } 
+        const iconResponse = await fetch("https://raw.githubusercontent.com/itstanner5216/Jack-GPT/main/icon_jackportal_fixed_512.png");
+        return addCorsHeaders(new Response(await iconResponse.arrayBuffer(), {
+          headers: {
+            "content-type": "image/png",
+            "cache-control": "public, max-age=31536000, immutable"
           }
-        );
+        }));
       }
       
-      // Main UI (HTML)
-      return htmlResponse(PORTAL_HTML);
+      // API documentation
+      if (path === "/api/docs") {
+        return addCorsHeaders(serveApiDocs());
+      }
+      
+      // Health check endpoint
+      if (path === "/health") {
+        return addCorsHeaders(new Response(JSON.stringify({
+          status: 'healthy',
+          version: '1.0.0',
+          timestamp: new Date().toISOString()
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        }));
+      }
+      
+      // Aggregate endpoint (search API)
+      if (path === "/aggregate") {
+        try {
+          const params = url.searchParams;
+          
+          // Validate required parameters
+          const query = params.get("q");
+          if (!query || !query.trim()) {
+            return addCorsHeaders(new Response(JSON.stringify({
+              error: "missing query",
+              status: 400
+            }), {
+              status: 400,
+              headers: { "content-type": "application/json" }
+            }));
+          }
+          
+          // Validate numeric parameters
+          const limit = parseInt(params.get("limit") || "10", 10);
+          if (isNaN(limit) || limit < 3 || limit > 20) {
+            return addCorsHeaders(new Response(JSON.stringify({
+              error: "invalid parameter: limit must be between 3 and 20",
+              status: 400
+            }), {
+              status: 400,
+              headers: { "content-type": "application/json" }
+            }));
+          }
+          
+          // Extract search parameters
+          const mode = params.get("mode") || "niche";
+          const fresh = params.get("fresh") || "y1";
+          const site = params.get("site") || null;
+          const duration = params.get("duration") || null;
+          const hostMode = params.get("hostMode") || "normal";
+          const durationMode = params.get("durationMode") || "normal";
+          const filterStrength = params.get("filterStrength") || "moderate";
+          const requestId = params.get("requestId") || crypto.randomUUID();
+          
+          // Parse nocache flag
+          const noCache = params.get("nocache") === "1";
+          
+          // Apply rate limiting based on IP
+          const clientIP = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+          const rateLimitKey = `ratelimit:${clientIP}`;
+          
+          // If we have KV for storage, use it for rate limiting
+          if (env && env.JACK_STORAGE) {
+            const currentRateLimit = await env.JACK_STORAGE.get(rateLimitKey);
+            const rateLimit = currentRateLimit ? parseInt(currentRateLimit) : 0;
+            
+            if (rateLimit > 50) { // Allow 50 requests per minute
+              return addCorsHeaders(new Response(JSON.stringify({
+                error: "rate limit exceeded, please try again in a minute",
+                status: 429
+              }), {
+                status: 429,
+                headers: {
+                  "content-type": "application/json",
+                  "retry-after": "60"
+                }
+              }));
+            }
+            
+            // Increment rate limit counter with 60 second expiry
+            await env.JACK_STORAGE.put(rateLimitKey, `${rateLimit + 1}`, { expirationTtl: 60 });
+          }
+          
+          // Configure search query
+          let searchQuery = query;
+          
+          // Configure search for different modes
+          let searchEndpoint = 'https://api.serper.dev/search';
+          let searchOptions = {
+            q: searchQuery,
+            gl: 'us',
+            hl: 'en',
+            num: limit
+          };
+          
+          // Apply freshness filter
+          if (fresh === 'd7') {
+            searchOptions.tbs = 'qdr:w';
+          } else if (fresh === 'm1') {
+            searchOptions.tbs = 'qdr:m';
+          } else if (fresh === 'm3') {
+            searchOptions.tbs = 'qdr:m3';
+          } else if (fresh === 'y1') {
+            searchOptions.tbs = 'qdr:y';
+          }
+          
+          // Apply site filter if specified
+          if (site) {
+            searchOptions.q += ` site:${site}`;
+          }
+          
+          // Modify query based on search mode
+          if (mode === 'niche') {
+            searchOptions.q += ' "homo gay male" video site:homotube.com OR site:gaymaletube.com OR site:boyfriendtv.com OR site:manporn.xxx OR site:pornmd.com OR site:gaytube.com OR site:gaysexvideos.tv OR site:hellomorningstarrs.com OR site:onlydudes.tv OR site:redgay.net OR site:eporner.com OR site:gayforfans.com OR site:youngsfun.com OR site:redtube.com OR site:gotgayporn.com OR site:tubegalore.com OR site:manhub.com OR site:txxx.com';
+          } else if (mode === 'keywords') {
+            searchOptions.q += ' "gay porn" OR "gay video" OR "homo video" OR "gay XXX" OR "gay adult" OR "male porn" OR "gay male"';
+          } else if (mode === 'deep_niche') {
+            searchOptions.q += ' "amateur homo" OR "gay male amateur" OR "home made gay" OR "gay male home" OR "gay male private" -commercial -professional';
+          } else if (mode === 'forums') {
+            searchOptions.q += ' gay OR homo OR male site:forum.* OR site:board.* OR site:community.* OR site:reddit.com OR inurl:forum OR inurl:thread OR inurl:topic OR inurl:board OR inurl:discussion';
+          } else if (mode === 'tumblrish') {
+            searchOptions.q += ' gay OR homo OR male site:tumblr.com OR site:blogspot.com OR site:wordpress.com OR site:blogger.com OR site:livejournal.com OR blog OR journal OR diary OR personal';
+          }
+          
+          // Apply duration filter if specified
+          if (duration) {
+            if (durationMode === 'lenient') {
+              // More flexible parsing
+              searchOptions.q += ` "${duration}" OR "length ${duration}" OR "duration ${duration}" OR "time ${duration}"`;
+            } else {
+              searchOptions.q += ` "${duration}"`;
+            }
+          }
+          
+          // Add custom sources if provided
+          const customSourcesParam = params.get("custom_sources");
+          if (customSourcesParam) {
+            const customDomains = customSourcesParam.split(',').map(d => d.trim()).filter(Boolean);
+            if (customDomains.length > 0) {
+              // Create a site: query for each domain OR'd together
+              const sitesQuery = customDomains.map(domain => `site:${domain}`).join(' OR ');
+              searchOptions.q += ` (${sitesQuery})`;
+            }
+          }
+          
+          // Check cache first if caching is enabled
+          const cacheKey = `search:${searchOptions.q}:${searchOptions.tbs || 'all'}`;
+          let cacheHit = false;
+          let data;
+          
+          if (!noCache && env && env.JACK_STORAGE) {
+            const cachedResponse = await env.JACK_STORAGE.get(cacheKey, { type: 'json' });
+            if (cachedResponse) {
+              data = cachedResponse;
+              cacheHit = true;
+            }
+          }
+          
+          // If not in cache, perform the search
+          if (!cacheHit) {
+            let success = false;
+            
+            // Try using the main Serper API first
+            try {
+              // Full text search
+              const searchFetch = await fetchWithTimeout(searchEndpoint, {
+                method: 'POST',
+                headers: {
+                  'X-API-KEY': env?.SERPER_API_KEY || 'a1feeb90cb8f651bafa0b8c1a0d1a2d3f35e9d12',
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(searchOptions)
+              }, 15000);
+              
+              if (searchFetch.ok) {
+                data = await searchFetch.json();
+                success = true;
+                
+                // Cache the result for 1 hour if caching is enabled
+                if (env && env.JACK_STORAGE) {
+                  await env.JACK_STORAGE.put(cacheKey, JSON.stringify(data), { expirationTtl: 3600 });
+                }
+              }
+            } catch (error) {
+              console.warn(`Primary search failed: ${error.message}. Trying fallback...`);
+            }
+            
+            // If Serper fails, fall back to the multi-provider search service
+            if (!success) {
+              const searchService = new SearchService(env);
+              const fallbackResult = await searchService.search(searchQuery, {
+                limit,
+                fresh,
+                site,
+                country: 'us',
+                language: 'en'
+              });
+              
+              if (fallbackResult.success) {
+                // Convert the results to the format expected by the client
+                data = {
+                  organic: fallbackResult.results.map(r => ({
+                    title: r.title,
+                    link: r.url,
+                    snippet: r.notes,
+                    imageUrl: r.thumbnail
+                  }))
+                };
+                
+                // Cache the fallback result
+                if (env && env.JACK_STORAGE) {
+                  await env.JACK_STORAGE.put(cacheKey, JSON.stringify(data), { expirationTtl: 1800 }); // 30 min cache for fallback
+                }
+              } else {
+                throw new Error(`All search providers failed: ${fallbackResult.error}`);
+              }
+            }
+          }
+          
+          // Process results
+          const organicResults = data.organic || [];
+          
+          // Map results to standardized format
+          let results = organicResults.map(result => {
+            // Extract domain from URL
+            let domain = '';
+            try {
+              const url = new URL(result.link);
+              domain = url.hostname.replace(/^www\./, '');
+            } catch (e) {
+              // If URL parsing fails, extract domain using regex
+              const match = result.link.match(/^(?:https?:\/\/)?(?:www\.)?([^\/]+)/i);
+              domain = match ? match[1] : '';
+            }
+            
+            // Extract video duration if available
+            let runtime = null;
+            const durationMatches = [
+              // Look for timestamps
+              result.title.match(/(\d+:\d+(?::\d+)?)/),
+              result.snippet?.match(/(\d+:\d+(?::\d+)?)/),
+              // Look for duration mentions
+              result.title.match(/(\d+)\s*min/i),
+              result.snippet?.match(/(\d+)\s*min/i),
+              // Look for length mentions
+              result.title.match(/length[:\s]+(\d+[\s:]*\d*)/i),
+              result.snippet?.match(/length[:\s]+(\d+[\s:]*\d*)/i),
+              // Look for duration mentions
+              result.title.match(/duration[:\s]+(\d+[\s:]*\d*)/i),
+              result.snippet?.match(/duration[:\s]+(\d+[\s:]*\d*)/i)
+            ].find(m => m);
+            
+            if (durationMatches) {
+              runtime = durationMatches[1];
+            }
+            
+            // Extract potential tags
+            const tags = [];
+            
+            // Look for hashtags
+            const hashtagMatches = (result.title + ' ' + (result.snippet || '')).match(/#([a-zA-Z0-9_]+)/g);
+            if (hashtagMatches) {
+              hashtagMatches.forEach(tag => {
+                tags.push(tag.substring(1));
+              });
+            }
+            
+            // Look for common gay porn categories
+            const categoryKeywords = ['amateur', 'hardcore', 'twink', 'bear', 'daddy', 'jock', 'muscle', 'bareback', 'group', 'solo'];
+            categoryKeywords.forEach(keyword => {
+              if ((result.title + ' ' + (result.snippet || '')).toLowerCase().includes(keyword)) {
+                if (!tags.includes(keyword)) {
+                  tags.push(keyword);
+                }
+              }
+            });
+            
+            // Get thumbnail URL
+            let thumbnail = null;
+            if (result.thumbnailUrl) {
+              thumbnail = result.thumbnailUrl;
+            } else if (result.imageUrl) {
+              thumbnail = result.imageUrl;
+            }
+            
+            // Enhance with additional metadata if time permits
+            if (!cacheHit && thumbnail) {
+              try {
+                // Optimize thumbnail URL
+                thumbnail = optimizeThumbnail(thumbnail);
+              } catch (e) {
+                console.warn(`Thumbnail optimization failed: ${e.message}`);
+              }
+            }
+            
+            return {
+              title: result.title,
+              site: domain,
+              url: result.link,
+              runtime: runtime,
+              thumbnail: thumbnail,
+              tags: tags.slice(0, 5), // Limit to 5 tags max
+              notes: "search result",
+              snippet: result.snippet
+            };
+          });
+          
+          // Apply server-side content filtering before returning results
+          if (filterStrength !== 'none') {
+            const filterConfig = {
+              settings: {
+                filterStrength,
+                confidenceThreshold: 0.7,
+                requirePositiveMatch: false
+              },
+              // Default filter terms if custom filters are unavailable
+              negativeTerms: [
+                { term: 'lesbian', enabled: true, category: 'content' },
+                { term: 'female', enabled: true, category: 'content' },
+                { term: 'straight sex', enabled: true, category: 'content' },
+                { term: 'f/f', enabled: true, category: 'content' },
+                { term: 'woman', enabled: true, category: 'content' }
+              ],
+              positiveTerms: [
+                { term: 'gay male', enabled: true, category: 'content' },
+                { term: 'men only', enabled: true, category: 'content' },
+                { term: 'male gay', enabled: true, category: 'content' },
+                { term: 'm/m', enabled: true, category: 'content' }
+              ]
+            };
+            
+            results = applyContentFilters(results, filterConfig);
+          }
+          
+          // Prepare final response with enhanced metadata
+          const response = {
+            query,
+            site,
+            mode,
+            durationQuery: duration,
+            freshness: fresh,
+            results,
+            diag: {
+              mode,
+              hostMode,
+              durationMode,
+              fresh,
+              cached: cacheHit,
+              processTime: new Date().getTime(),
+              filterStrength,
+              requestId,
+              resultCount: results.length,
+              originalCount: organicResults.length
+            }
+          };
+          
+          // Enhance logging if analytics are available
+          if (env && env.JACK_ANALYTICS) {
+            const analyticsData = {
+              timestamp: new Date().toISOString(),
+              clientIP: clientIP,
+              query: searchQuery,
+              mode,
+              freshness: fresh,
+              resultCount: results.length,
+              originalCount: organicResults.length,
+              requestId
+            };
+            
+            // Don't await to avoid delaying response
+            env.JACK_ANALYTICS.put(`search:${requestId}`, JSON.stringify(analyticsData), {
+              expirationTtl: 604800 // 7 days
+            }).catch(error => {
+              console.error('Analytics error:', error);
+            });
+          }
+          
+          return addCorsHeaders(new Response(JSON.stringify(response), {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "cache-control": noCache ? "no-store" : "public, max-age=3600"
+            }
+          }));
+        } catch (error) {
+          console.error(`[handleAggregate] Error: ${error.message}`, error.stack);
+          return addCorsHeaders(new Response(JSON.stringify({
+            error: "an unexpected error occurred",
+            requestId: crypto.randomUUID(),
+            status: 500
+          }), {
+            status: 500,
+            headers: { "content-type": "application/json" }
+          }));
+        }
+      }
+      
+      // Main page
+      if (path === "/" || path === "/index.html") {
+        return addCorsHeaders(new Response(PORTAL_HTML, {
+          status: 200,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "public, max-age=300" // 5 minute cache
+          }
+        }));
+      }
+      
+      // 404 Not Found for any other routes
+      return addCorsHeaders(new Response("Not found", {
+        status: 404,
+        headers: { "content-type": "text/plain" }
+      }));
     } catch (error) {
-      // Global error handler
+      // Global error handler for unhandled exceptions
       console.error(`[Jack-GPT] Unhandled error: ${error.message}`, error.stack);
-      return new Response(JSON.stringify({
+      return addCorsHeaders(new Response(JSON.stringify({
         error: 'An unexpected error occurred',
         requestId: crypto.randomUUID(),
         timestamp: new Date().toISOString()
@@ -3029,10 +5016,9 @@ export default {
         status: 500,
         headers: {
           'content-type': 'application/json',
-          'access-control-allow-origin': '*',
           'cache-control': 'no-store'
         }
-      });
+      }));
     }
   }
 };
