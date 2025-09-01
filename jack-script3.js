@@ -10,43 +10,7 @@ const BUILD_DATE = '2025-08-29';
 const SERPER_API_KEY = 'a1feeb90cb8f651bafa0b8c1a0d1a2d3f35e9d12'; // Fallback key
 const GOOGLE_KEY = 'AIzaSyAZhWamw25pgVB_3NAhvQOuSbkeh-mEWu0'; // Fallback key
 const GOOGLE_CX = '73e4998767b3c4800'; // Fallback CSE ID
-const FORUM_KEY = '39c5bdf0ac8645b5c9cc3f9a88c7ad4683395e78ec517ac35466bf5df2cf305e'; // Fallback key// Enhanced API integrations
-const ADL_API_BASE = 'https://porn-api-adultdatalink.p.rapidapi.com';
-
-// Known gay-oriented hosts for auto-pass orientation filtering
-const KNOWN_GAY_HOSTS = new Set([
-  "gayporntube.com", "gaymaletube.com", "boyfriendtv.com", "rockettube.com", 
-  "youporngay.com", "gaytwinksporn.net", "gaymenring.com", "gayfuckporn.com",
-  "manpornxxx.com", "gayrookievideos.com", "guystricked.com", "101boyvideos.com",
-  "gotgayporn.com", "ggroot.com", "winporn.com"
-]);
-
-// Query expansion terms for niche queries
-const NICHE_EXPANSION_TERMS = [
-  "forced", "while sleeping", "public cruising", "public cdmx", "gloryhole"
-];
-
-// KV Storage Keys
-const KV_KEYS = {
-  ADAPTERS_CONFIG: 'adapters:config',
-  FRONTIER_TAGS: 'frontier:tags',
-  CACHE_PREFIX: 'cache:',
-  ARCHIVE_PREFIX: 'archive:',
-  ADL_PREFIX: 'adl:',
-  FRONTIER_PREFIX: 'frontier:'
-};
-
-// Concurrency limits per host
-const HOST_CONCURRENCY_LIMITS = new Map([
-  ['archive.org', 2],
-  ['web.archive.org', 2],
-  ['reddit.com', 3],
-  ['www.reddit.com', 3],
-  ['yandex.com', 4],
-  ['porn-api-adultdatalink.p.rapidapi.com', 5]
-]);
-
-
+const FORUM_KEY = '39c5bdf0ac8645b5c9cc3f9a88c7ad4683395e78ec517ac35466bf5df2cf305e'; // Fallback key
 
 // Host configuration
 const FREE_HOSTS = [
@@ -59,6 +23,34 @@ const FREE_HOSTS = [
   "manpornxxx.com", "hotxxx.com", "gayrookievideos.com", "guystricked.com",
   "101boyvideos.com", "gaytwinksporn.net", "tumbex.com"
 ];
+
+// === injected: enhanced constants (approved) ===
+const ADL_API_BASE = 'https://porn-api-adultdatalink.p.rapidapi.com';
+const KNOWN_GAY_HOSTS = new Set([
+  "gayporntube.com", "gaymaletube.com", "boyfriendtv.com", "rockettube.com", 
+  "youporngay.com", "gaytwinksporn.net", "gaymenring.com", "gayfuckporn.com",
+  "manpornxxx.com", "gayrookievideos.com", "guystricked.com", "101boyvideos.com",
+  "gotgayporn.com", "ggroot.com", "winporn.com"
+]);
+const NICHE_EXPANSION_TERMS = ["forced", "while sleeping", "public cruising", "public cdmx", "gloryhole"];
+const KV_KEYS = {
+  ADAPTERS_CONFIG: 'adapters:config',
+  FRONTIER_TAGS: 'frontier:tags',
+  CACHE_PREFIX: 'cache:',
+  ARCHIVE_PREFIX: 'archive:',
+  ADL_PREFIX: 'adl:',
+  FRONTIER_PREFIX: 'frontier:'
+};
+const HOST_CONCURRENCY_LIMITS = new Map([
+  ['archive.org', 2],
+  ['web.archive.org', 2],
+  ['reddit.com', 3],
+  ['www.reddit.com', 3],
+  ['yandex.com', 4],
+  ['porn-api-adultdatalink.p.rapidapi.com', 5]
+]);
+// === end injected constants ===
+
 
 const SOFT_ALLOW_HOSTS = [
   "redgifs.com", "twitter.com", "x.com", "yuvutu.com", "tnaflix.com", "tube8.com",
@@ -309,50 +301,7 @@ async function fetchWithTimeout(resource, options, timeout = 9000) {
       ...options,
       signal: controller.signal,
       cf: { cacheTtl: 0, cacheEverything: false }
-    
-
-// Concurrency control for host-based rate limiting
-const activeFetches = new Map();
-
-/**
- * Fetch with concurrent request limiting per hostname
- * @param {string|URL|Request} resource - Resource to fetch
- * @param {Object} options - Fetch options
- * @param {number} timeout - Timeout in milliseconds
- * @returns {Promise<Response>} Fetch response
- */
-async function fetchLimited(resource, options = {}, timeout = 9000) {
-  let url;
-  try {
-    if (typeof resource === 'string') {
-      url = new URL(resource);
-    } else if (resource instanceof URL) {
-      url = resource;
-    } else if (resource instanceof Request) {
-      url = new URL(resource.url);
-    } else {
-      return fetchWithTimeout(resource, options, timeout);
-    }
-  } catch (e) {
-    console.warn("fetchLimited: Failed to parse URL, bypassing limits", e);
-    return fetchWithTimeout(resource, options, timeout);
-  }
-  const hostname = url.hostname.toLowerCase();
-  const concurrencyLimit = HOST_CONCURRENCY_LIMITS.get(hostname) || 4;
-  if (!activeFetches.has(hostname)) activeFetches.set(hostname, 0);
-  while (activeFetches.get(hostname) >= concurrencyLimit) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  activeFetches.set(hostname, activeFetches.get(hostname) + 1);
-  try {
-    return await fetchWithTimeout(resource, options, timeout);
-  } finally {
-    activeFetches.set(hostname, activeFetches.get(hostname) - 1);
-    if (activeFetches.get(hostname) <= 0) activeFetches.delete(hostname);
-  }
-}
-
-});
+    });
     clearTimeout(id);
     return res;
   } catch (e) {
@@ -396,7 +345,7 @@ async function poolMap(items, worker, n = 6) {
   return out;
 }
 
-// Listing-page harvester Ã¢ÂÂ extract direct video links
+// Listing-page harvester â extract direct video links
 function harvestVideoLinksFromListing(html, baseUrl) {
   const out = [];
   const hrefs = Array.from(html.matchAll(/<a[^>]+href=["']([^"']+)["']/ig))
@@ -1014,38 +963,57 @@ async function handleAggregate(request, env, ctx) {
   if (!FRESH_OK.has(freshness)) freshness = "y1";
   const rawSite = (url.searchParams.get("site") || "").trim();
   let siteQuery = sanitizeSiteParam(rawSite) || null;
-  let searchMode = (url.searchParams.get("mode") || "normal").trim().toLowerCase();
-if (siteQuery && /[\s"]/g.test(siteQuery)) siteQuery = null;
-const DEBUG = url.searchParams.get("debug") === "1" || String(env?.DEBUG || "").toLowerCase() === "true";
-
+  let searchMode = (url.searchParams.get("mode") || "").trim().toLowerCase() || null;
+  if (!searchMode) searchMode = "niche";
+  if (siteQuery && /[\s"]/g.test(siteQuery)) siteQuery = null;
+  const DEBUG = url.searchParams.get("debug") === "1" || String(env?.DEBUG || "").toLowerCase() === "true";
+  
   // Analytics tracking
   const requestId = url.searchParams.get("reqId") || crypto.randomUUID();
-
-    // Initialize the enhanced search service
-    const searchService = new EnhancedSearchService(env);
-    // Build search options
+  
+  // Diagnostics
+  let fetched_total = 0, dropped_paywall = 0, dropped_dead = 0;
+  let dropped_forbidden = 0, dropped_removed = 0;
+  let dropped_not_video = 0, dropped_fallback_not_video = 0, dropped_orientation = 0;
+  const errorLog = [];
+  
+  const wantRange = parseDurationQuery(durationQuery);
+  
+  try {
+    // Initialize the multi-provider search service
+    const searchService = new SearchService(env);
+    
+    // Create appropriate query based on search mode
+    let enhancedQuery = q;
+    if (searchMode === 'niche') {
+      enhancedQuery += ' "gay porn"';
+    } else if (searchMode === 'keywords') {
+      enhancedQuery += ' "gay porn" OR "gay video" OR "homo video"';
+    } else if (searchMode === 'deep_niche') {
+      enhancedQuery += ' "amateur homo" OR "gay male amateur"';
+    } else if (searchMode === 'forums') {
+      enhancedQuery += ' gay OR homo OR male site:forum.* OR site:reddit.com';
+    } else if (searchMode === 'tumblrish') {
+      enhancedQuery += ' gay OR homo OR male site:tumblr.com OR site:blogspot.com';
+    }
+    
+    // Add site restriction if specified
+    if (siteQuery) {
+      enhancedQuery += ` site:${siteQuery}`;
+    }
+    
+    // Search options
     const searchOptions = {
-      limit: limit * 2,
+      limit: limit * 2, // Request more results to allow for filtering
       fresh: freshness,
       site: siteQuery,
       country: 'us',
       language: 'en',
       mode: searchMode
     };
-
-    let searchResult;
-    switch (searchMode) {
-      case 'deep_niche':
-        searchResult = await searchService.searchDeepNicheMode(q, searchOptions);
-        break;
-      case 'light':
-        searchResult = await searchService.searchLightMode(q, searchOptions);
-        break;
-      case 'normal':
-      default:
-        searchResult = await searchService.searchNormalMode(q, searchOptions);
-        break;
-    }
+    
+    // Perform search with automatic provider fallback
+    const searchResult = await searchService.search(enhancedQuery, searchOptions);
     
     if (!searchResult.success) {
       return jerr(searchResult.error || "search failed", 500);
@@ -1163,15 +1131,15 @@ const DEBUG = url.searchParams.get("debug") === "1" || String(env?.DEBUG || "").
       
       const recentBoost = it.url.includes("2024") || it.url.includes("2025");
       let score = PREFERRED_HOSTS.has(host) ? 100 : (SOFT_ALLOW.has(host) ? 75 : 40);
-      \
+      
 const hostLower = host.replace(/^www\./, "");
-if (KNOWN_GAY_HOSTS.has(hostLower)) { score += 10; }
-if (it.source === "frontier" || (it.notes && it.notes.includes("frontier"))) { score += 5; }
-if (it.source === "adl") { score += 8; }
-if (it.source === "forum-mining" || (it.notes && it.notes.includes("forum-out"))) { score += 15; }
-if (!FREE_HOSTS.includes(hostLower) && !SOFT_ALLOW_HOSTS.includes(hostLower)) { score += 3; }
+if (KNOWN_GAY_HOSTS.has(hostLower)) { score += 10; } // Auto-pass orientation bonus
+if (it.source === "frontier" || (it.notes && it.notes.includes("frontier"))) { score += 5; } // frontier boost
+if (it.source === "adl") { score += 8; } // ADL boost
+if (it.source === "forum-mining" || (it.notes && it.notes.includes("forum-out"))) { score += 15; } // forum-out boost
+if (!FREE_HOSTS.includes(hostLower) && !SOFT_ALLOW_HOSTS.includes(hostLower)) { score += 3; } // rarity bonus
 if (recentBoost) score += 10;
-      if (runtimeSec != null && runtimeSec > 300) score += 5;
+      if (runtimeSec != null) score += 5;
       score += titleRelevanceBonus(q, it.title);
       if (looksLikeVideoUrl(it.url)) score += 50;
       if (looksLikeSearchUrl(it.url)) score -= 50;
@@ -1232,7 +1200,7 @@ if (recentBoost) score += 10;
         if (recentBoost) score += 10;
         
         const rs = it.runtimeSec ?? lc.duration;
-        if (rs != null && rs > 300) score += 5;
+        if (rs != null) score += 5;
         score += titleRelevanceBonus(q, it.title);
         if (looksLikeVideoUrl(it.url)) score += 50;
         if (looksLikeSearchUrl(it.url)) score -= 50;
@@ -1263,7 +1231,7 @@ if (recentBoost) score += 10;
         title: it.title,
         site: it.site,
         url: it.url,
-        runtime: it.runtimeSec != null ? fmtMMSS(it.runtimeSec) : "Ã¢ÂÂ",
+        runtime: it.runtimeSec != null ? fmtMMSS(it.runtimeSec) : "â",
         thumbnail: it.thumbnail || null,
         tags: it.tags && it.tags.length ? it.tags : [],
         notes: it.notes || (it.source === "forum" ? "discussion thread (links inside)" : "search result")
@@ -1289,7 +1257,7 @@ if (recentBoost) score += 10;
         title: it.title,
         site: it.site,
         url: it.url,
-        runtime: it.runtimeSec != null ? fmtMMSS(it.runtimeSec) : "Ã¢ÂÂ",
+        runtime: it.runtimeSec != null ? fmtMMSS(it.runtimeSec) : "â",
         thumbnail: it.thumbnail || null,
         tags: it.tags && it.tags.length ? it.tags : [],
         notes: (it.notes ? it.notes + "; " : "") + "raw-fallback"
@@ -2078,7 +2046,7 @@ function buildUrl() {
 function cardHtml(item, showThumb) {
   const t = item.title || "clip";
   const site = item.site || "";
-  const rt = item.runtime || "Ã¢ÂÂ";
+  const rt = item.runtime || "â";
   const url = item.url || "#";
   const thumb = item.thumbnail || item.thumb || "";
   
@@ -3144,7 +3112,7 @@ const ADMIN_PANEL_HTML = `<!DOCTYPE html>
         
 }
   html += \`<div style="font-weight:700">\${t}</div>\`;
-  html += \`<div class="meta"><strong>Site:</strong> \${site} &nbsp; Ã¢ÂÂ¢ &nbsp; <strong>Runtime:</strong> \${rt}</div>\`;
+  html += \`<div class="meta"><strong>Site:</strong> \${site} &nbsp; â¢ &nbsp; <strong>Runtime:</strong> \${rt}</div>\`;
   html += \`<div><a class="link" href="\${url}" target="_blank" rel="noopener noreferrer">View Content</a></div>\`;
   html += '</div>';
   
@@ -3637,7 +3605,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const voiceButton = document.createElement('button');
   voiceButton.type = 'button';
   voiceButton.className = 'voice-search';
-  voiceButton.innerHTML = 'Ã°ÂÂÂ¤';
+  voiceButton.innerHTML = 'ð¤';
   voiceButton.title = 'Search by voice';
   voiceButton.setAttribute('aria-label', 'Search by voice');
   
@@ -3654,7 +3622,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     
     recognition.onstart = () => {
       voiceButton.classList.add('listening');
-      voiceButton.innerHTML = 'Ã°ÂÂÂ´';
+      voiceButton.innerHTML = 'ð´';
       showToast('Listening...');
     };
     
@@ -3671,12 +3639,12 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     
     recognition.onend = () => {
       voiceButton.classList.remove('listening');
-      voiceButton.innerHTML = 'Ã°ÂÂÂ¤';
+      voiceButton.innerHTML = 'ð¤';
     };
     
     recognition.onerror = (event) => {
       voiceButton.classList.remove('listening');
-      voiceButton.innerHTML = 'Ã°ÂÂÂ¤';
+      voiceButton.innerHTML = 'ð¤';
       showToast('Voice recognition error: ' + event.error);
     };
     
@@ -3688,7 +3656,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 const clearButton = document.createElement('button');
 clearButton.type = 'button';
 clearButton.className = 'search-clear';
-clearButton.innerHTML = 'Ã¢ÂÂ';
+clearButton.innerHTML = 'â';
 clearButton.setAttribute('aria-label', 'Clear search');
 clearButton.style.display = 'none';
 qEl.parentNode.insertBefore(clearButton, qEl.nextSibling);
@@ -3792,7 +3760,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const title = c.querySelector("div[style*='font-weight']").textContent.trim();
       const site = c.querySelector(".meta").textContent.replace(/\\s+/g, " ").trim();
       const url = c.querySelector("a.link")?.href || "";
-      return title + " Ã¢ÂÂ " + site + " Ã¢ÂÂ " + url;
+      return title + " â " + site + " â " + url;
     }).join("\\n");
     
     try {
@@ -3843,7 +3811,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Clear previous results and error messages
     clearError();
     goBtn.disabled = true;
-    setStatus("loadingÃ¢ÂÂ¦");
+    setStatus("loadingâ¦");
     
     // Show loading skeletons
     renderLoadingSkeleton(parseInt(limitEl.value) > 6 ? 6 : parseInt(limitEl.value));
@@ -4138,7 +4106,36 @@ async function checkRateLimit(env, clientIP) {
 }
 // ===== end KV utilities =====
 
-// ------------------ Site Adapters Manager ------------------
+
+// === injected: fetchLimited (approved) ===
+const activeFetches = new Map();
+async function fetchLimited(resource, options = {}, timeout = 9000) {
+  let url;
+  try {
+    if (typeof resource === 'string') url = new URL(resource);
+    else if (resource instanceof URL) url = resource;
+    else if (resource instanceof Request) url = new URL(resource.url);
+    else return fetchWithTimeout(resource, options, timeout);
+  } catch (e) {
+    return fetchWithTimeout(resource, options, timeout);
+  }
+  const hostname = url.hostname.toLowerCase();
+  const concurrencyLimit = HOST_CONCURRENCY_LIMITS.get(hostname) || 4;
+  if (!activeFetches.has(hostname)) activeFetches.set(hostname, 0);
+  while (activeFetches.get(hostname) >= concurrencyLimit) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  activeFetches.set(hostname, activeFetches.get(hostname) + 1);
+  try {
+    return await fetchWithTimeout(resource, options, timeout);
+  } finally {
+    activeFetches.set(hostname, activeFetches.get(hostname) - 1);
+    if (activeFetches.get(hostname) <= 0) activeFetches.delete(hostname);
+  }
+}
+// === end fetchLimited ===
+
+// === injected: SiteAdaptersManager (approved) ===
 class SiteAdaptersManager {
   constructor(env) { this.env = env; }
   async getAdapters() {
@@ -4146,8 +4143,8 @@ class SiteAdaptersManager {
     try {
       const data = await this.env.JACK_STORAGE.get(KV_KEYS.ADAPTERS_CONFIG);
       return data ? JSON.parse(data) : {};
-    } catch (error) {
-      console.error('KV get error for adapters:', error);
+    } catch (e) {
+      console.error('KV get error for adapters:', e);
       return {};
     }
   }
@@ -4158,8 +4155,8 @@ class SiteAdaptersManager {
     try {
       await this.env.JACK_STORAGE.put(KV_KEYS.ADAPTERS_CONFIG, JSON.stringify(adapters));
       return true;
-    } catch (error) {
-      console.error('KV set error for adapters:', error);
+    } catch (e) {
+      console.error('KV set error for adapters:', e);
       return false;
     }
   }
@@ -4170,26 +4167,24 @@ class SiteAdaptersManager {
     try {
       await this.env.JACK_STORAGE.put(KV_KEYS.ADAPTERS_CONFIG, JSON.stringify(adapters));
       return true;
-    } catch (error) {
-      console.error('KV set error for adapters:', error);
+    } catch (e) {
+      console.error('KV set error for adapters:', e);
       return false;
     }
   }
-  extractVideoLinks(html, baseUrl, selectors = {}) {
-    // Very light extractor to avoid altering core parser
-    const links = [];
-    const urlRe = /href=["']([^"'#]+)["']/gi;
+  extractVideoLinks(html, baseUrl) {
+    const out = [];
+    const rx = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/ig;
     let m;
-    while ((m = urlRe.exec(html))) {
+    while ((m = rx.exec(html))) {
       try {
-        const u = new URL(m[1], baseUrl);
-        const host = u.hostname.replace(/^www\./, "");
-        if (/video|watch|view|\/v\//i.test(u.pathname)) {
-          links.push({ url: u.href, title: u.pathname.split('/').pop() });
+        const u = new URL(m[1], baseUrl).toString();
+        if (/(video|watch|view|embed)/i.test(u)) {
+          out.push({ url: u, title: (m[2]||'').replace(/<[^>]+>/g,'').trim() });
         }
       } catch {}
     }
-    return links;
+    return out.slice(0, 20);
   }
   async harvestFromAdapter(adapter, maxResults = 20) {
     const results = [];
@@ -4203,7 +4198,7 @@ class SiteAdaptersManager {
         });
         if (!response.ok) continue;
         const html = await response.text();
-        const videoLinks = this.extractVideoLinks(html, seedUrl, adapter.selectors);
+        const videoLinks = this.extractVideoLinks(html, seedUrl);
         for (const link of videoLinks) {
           if (results.length >= maxResults) break;
           results.push({
@@ -4211,22 +4206,23 @@ class SiteAdaptersManager {
             site: new URL(seedUrl).hostname.replace(/^www\./, ""),
             url: link.url,
             runtimeSec: null,
-            thumbnail: link.thumbnail || null,
+            thumbnail: null,
             tags: [],
             notes: "adapter-harvest",
             source: "adapter"
           });
         }
         if (results.length >= maxResults) break;
-      } catch (error) {
-        console.error(`Adapter harvest error for ${seedUrl}:`, error);
+      } catch (e) {
+        console.error(`Adapter harvest error for ${seedUrl}:`, e);
       }
     }
     return results;
   }
 }
+// === end SiteAdaptersManager ===
 
-// ------------------ AdultDataLink API ------------------
+// === injected: AdultDataLinkAPI (approved) ===
 class AdultDataLinkAPI {
   constructor(env) {
     this.env = env;
@@ -4234,48 +4230,41 @@ class AdultDataLinkAPI {
     this.apiKey = env?.ADL_API_KEY || env?.RAPIDAPI_KEY;
   }
   async search(query, options = {}) {
-    if (!this.apiKey) {
-      console.warn('AdultDataLink API key not configured');
-      return [];
-    }
+    if (!this.apiKey) return [];
     try {
       const cacheKey = `${KV_KEYS.ADL_PREFIX}${btoa(query + JSON.stringify(options))}`;
       if (this.env?.JACK_STORAGE) {
         const cached = await this.env.JACK_STORAGE.get(cacheKey);
         if (cached) {
-          const data = JSON.parse(cached);
-          if (data.timestamp > Date.now() - 1800000) { // 30 minutes
-            return data.results;
-          }
+          const d = JSON.parse(cached);
+          if (d.timestamp > Date.now() - 1800000) return d.results;
         }
       }
       const searchParams = new URLSearchParams({
-        q: query,
-        limit: String(options.limit || 20),
-        offset: String(options.offset || 0)
+        q: query, limit: String(options.limit || 20), offset: String(options.offset || 0)
       });
-      const response = await fetchWithTimeout(`${this.baseUrl}/search?${searchParams}`, {
+      const res = await fetchWithTimeout(`${this.baseUrl}/search?${searchParams}`, {
         headers: {
           'X-RapidAPI-Key': this.apiKey,
           'X-RapidAPI-Host': 'porn-api-adultdatalink.p.rapidapi.com',
           'Accept': 'application/json'
         }
       });
-      if (!response.ok) throw new Error(`ADL API error: ${response.status}`);
-      const data = await response.json();
+      if (!res.ok) throw new Error(`ADL API error: ${res.status}`);
+      const data = await res.json();
       const normalized = this.normalizeResults(data.results || data.videos || data);
       if (this.env?.JACK_STORAGE) {
         await this.env.JACK_STORAGE.put(cacheKey, JSON.stringify({ results: normalized, timestamp: Date.now() }), { expirationTtl: 1800 });
       }
       return normalized;
-    } catch (error) {
-      console.error('AdultDataLink API error:', error);
+    } catch (e) {
+      console.error('AdultDataLink API error:', e);
       return [];
     }
   }
-  normalizeResults(rawResults) {
-    if (!Array.isArray(rawResults)) return [];
-    return rawResults.map(item => ({
+  normalizeResults(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw.map(item => ({
       title: item.title || item.name || "Video",
       site: item.site || item.host || "unknown",
       url: item.url || item.link || item.video_url || "",
@@ -4284,262 +4273,89 @@ class AdultDataLinkAPI {
       tags: Array.isArray(item.tags) ? item.tags.slice(0, 5) : [],
       notes: "adl-api",
       source: "adl"
-    })).filter(item => item.url);
+    })).filter(x => x.url);
   }
 }
+// === end AdultDataLinkAPI ===
 
-// ------------------ Enhanced Search (wrapper) ------------------
-class EnhancedSearchService {
-  constructor(env) {
-    this.core = new SearchService(env);
-  }
-  async searchNormalMode(q, opts) {
-    return this.core.search(q, opts);
-  }
-  async searchDeepNicheMode(q, opts) {
-    const expanded = expandQuery(q + ' "gay porn"', 'deep_niche');
-    return this.core.search(expanded, opts);
-  }
-  async searchLightMode(q, opts) {
-    const o = { ...opts, limit: Math.max(5, Math.floor((opts?.limit || 20) / 2)) };
-    return this.core.search(q, o);
-  }
-}
-
-// ------------------ Query Expansion ------------------
-function expandQuery(originalQuery, mode) {
-  if (mode !== 'niche' && mode !== 'deep_niche') return originalQuery;
-  const numTerms = Math.floor(Math.random() * 2) + 2; // 2 or 3
-  const selectedTerms = [];
-  const availableTerms = [...NICHE_EXPANSION_TERMS];
-  for (let i = 0; i < numTerms && availableTerms.length > 0; i++) {
-    const randomIndex = Math.floor(Math.random() * availableTerms.length);
-    selectedTerms.push(availableTerms.splice(randomIndex, 1)[0]);
-  }
-  if (selectedTerms.length === 0) return originalQuery;
-  const expansion = selectedTerms.map(term => `"${term}"`).join(' OR ');
-  return `${originalQuery} (${expansion})`;
-}
-
-// ------------------ Admin Handlers ------------------
+// === injected: Admin Handlers (approved) ===
 async function handleAdminAdapters(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace('/admin/adapters/', '');
   const manager = new SiteAdaptersManager(env);
-  
-  // Handle options preflight - withCors will be applied by the router
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204 });
-  }
-  
-  // Get all adapters
+  if (request.method === "OPTIONS") return new Response(null, { status: 204 });
   if (path === "" && request.method === "GET") {
     const adapters = await manager.getAdapters();
-    return new Response(JSON.stringify({ ok: true, adapters }), {
-      status: 200,
-      headers: { "content-type": "application/json" }
-    });
+    return new Response(JSON.stringify({ ok: true, adapters }), { status: 200, headers: { "content-type": "application/json" } });
   }
-  
-  // Add or update adapter
   if (path === "" && request.method === "POST") {
     try {
       const body = await request.json();
-      if (!body.hostname || !body.config) {
-        return new Response(JSON.stringify({ ok: false, error: "Missing hostname or config" }), {
-          status: 400,
-          headers: { "content-type": "application/json" }
-        });
-      }
-      
+      if (!body.hostname || !body.config) return new Response(JSON.stringify({ ok:false, error:"Missing hostname or config"}), { status: 400, headers: { "content-type": "application/json" } });
       const success = await manager.setAdapter(body.hostname, body.config);
-      if (success) {
-        return new Response(JSON.stringify({ ok: true, message: "Adapter saved successfully" }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        });
-      } else {
-        return new Response(JSON.stringify({ ok: false, error: "Failed to save adapter" }), {
-          status: 500,
-          headers: { "content-type": "application/json" }
-        });
-      }
-    } catch (error) {
-      return new Response(JSON.stringify({ ok: false, error: "Invalid request body" }), {
-        status: 400,
-        headers: { "content-type": "application/json" }
-      });
-    }
+      return new Response(JSON.stringify(success ? { ok:true, message:"Adapter saved successfully"} : { ok:false, error:"Failed to save adapter"}), { status: success?200:500, headers: { "content-type": "application/json" } });
+    } catch { return new Response(JSON.stringify({ ok:false, error:"Invalid request body"}), { status: 400, headers: { "content-type": "application/json" } }); }
   }
-  
-  // Delete adapter
   if (path !== "" && request.method === "DELETE") {
     const hostname = path;
     const success = await manager.removeAdapter(hostname);
-    if (success) {
-      return new Response(JSON.stringify({ ok: true, message: "Adapter removed successfully" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    } else {
-      return new Response(JSON.stringify({ ok: false, error: "Failed to remove adapter" }), {
-        status: 500,
-        headers: { "content-type": "application/json" }
-      });
-    }
+    return new Response(JSON.stringify(success ? { ok:true, message:"Adapter removed successfully"} : { ok:false, error:"Failed to remove adapter"}), { status: success?200:500, headers: { "content-type": "application/json" } });
   }
-  
-  // Get specific adapter
   if (path !== "" && request.method === "GET") {
     const hostname = path;
     const adapters = await manager.getAdapters();
-    if (adapters[hostname]) {
-      return new Response(JSON.stringify({ ok: true, adapter: adapters[hostname] }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    } else {
-      return new Response(JSON.stringify({ ok: false, error: "Adapter not found" }), {
-        status: 404,
-        headers: { "content-type": "application/json" }
-      });
-    }
+    if (adapters[hostname]) return new Response(JSON.stringify({ ok:true, adapter: adapters[hostname] }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok:false, error:"Adapter not found"}), { status: 404, headers: { "content-type": "application/json" } });
   }
-  
-  return new Response(JSON.stringify({ ok: false, error: "Method not allowed" }), {
-    status: 405,
-    headers: { "content-type": "application/json" }
-  });
+  return new Response(JSON.stringify({ ok:false, error:"Method not allowed"}), { status: 405, headers: { "content-type": "application/json" } });
 }
 
 async function handleAdminFrontier(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace('/admin/frontier/', '');
-  
-  // Handle options preflight - withCors will be applied by the router
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204 });
-  }
-  
-  // Get frontier tags
+  if (request.method === "OPTIONS") return new Response(null, { status: 204 });
   if (path === "tags" && request.method === "GET") {
     try {
       const tags = await env.JACK_STORAGE.get(KV_KEYS.FRONTIER_TAGS, { type: 'json' }) || [];
-      return new Response(JSON.stringify({ ok: true, tags }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    } catch (error) {
-      return new Response(JSON.stringify({ ok: false, error: "Failed to get tags" }), {
-        status: 500,
-        headers: { "content-type": "application/json" }
-      });
-    }
+      return new Response(JSON.stringify({ ok:true, tags }), { status: 200, headers: { "content-type": "application/json" } });
+    } catch { return new Response(JSON.stringify({ ok:false, error:"Failed to get tags"}), { status: 500, headers: { "content-type": "application/json" } }); }
   }
-  
-  // Update frontier tags
   if (path === "tags" && request.method === "POST") {
     try {
       const body = await request.json();
-      if (!Array.isArray(body.tags)) {
-        return new Response(JSON.stringify({ ok: false, error: "Tags must be an array" }), {
-          status: 400,
-          headers: { "content-type": "application/json" }
-        });
-      }
-      
+      if (!Array.isArray(body.tags)) return new Response(JSON.stringify({ ok:false, error:"Tags must be an array"}), { status: 400, headers: { "content-type": "application/json" } });
       await env.JACK_STORAGE.put(KV_KEYS.FRONTIER_TAGS, JSON.stringify(body.tags));
-      return new Response(JSON.stringify({ ok: true, message: "Tags updated successfully" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    } catch (error) {
-      return new Response(JSON.stringify({ ok: false, error: "Invalid request body" }), {
-        status: 400,
-        headers: { "content-type": "application/json" }
-      });
-    }
+      return new Response(JSON.stringify({ ok:true, message:"Tags updated successfully"}), { status: 200, headers: { "content-type": "application/json" } });
+    } catch { return new Response(JSON.stringify({ ok:false, error:"Invalid request body"}), { status: 400, headers: { "content-type": "application/json" } }); }
   }
-  
-  // Get frontier data
   if (path.startsWith("data/") && request.method === "GET") {
     const key = path.replace("data/", "");
-    if (!key) {
-      return new Response(JSON.stringify({ ok: false, error: "Invalid key" }), {
-        status: 400,
-        headers: { "content-type": "application/json" }
-      });
-    }
-    
+    if (!key) return new Response(JSON.stringify({ ok:false, error:"Invalid key"}), { status: 400, headers: { "content-type": "application/json" } });
     try {
       const data = await env.JACK_STORAGE.get(KV_KEYS.FRONTIER_PREFIX + key, { type: 'json' }) || null;
-      return new Response(JSON.stringify({ ok: true, data }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    } catch (error) {
-      return new Response(JSON.stringify({ ok: false, error: "Failed to get data" }), {
-        status: 500,
-        headers: { "content-type": "application/json" }
-      });
-    }
+      return new Response(JSON.stringify({ ok:true, data }), { status: 200, headers: { "content-type": "application/json" } });
+    } catch { return new Response(JSON.stringify({ ok:false, error:"Failed to get data"}), { status: 500, headers: { "content-type": "application/json" } }); }
   }
-  
-  // Update frontier data
   if (path.startsWith("data/") && request.method === "POST") {
     const key = path.replace("data/", "");
-    if (!key) {
-      return new Response(JSON.stringify({ ok: false, error: "Invalid key" }), {
-        status: 400,
-        headers: { "content-type": "application/json" }
-      });
-    }
-    
+    if (!key) return new Response(JSON.stringify({ ok:false, error:"Invalid key"}), { status: 400, headers: { "content-type": "application/json" } });
     try {
       const body = await request.json();
       await env.JACK_STORAGE.put(KV_KEYS.FRONTIER_PREFIX + key, JSON.stringify(body.data));
-      return new Response(JSON.stringify({ ok: true, message: "Data updated successfully" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    } catch (error) {
-      return new Response(JSON.stringify({ ok: false, error: "Invalid request body" }), {
-        status: 500,
-        headers: { "content-type": "application/json" }
-      });
-    }
+      return new Response(JSON.stringify({ ok:true, message:"Data updated successfully"}), { status: 200, headers: { "content-type": "application/json" } });
+    } catch { return new Response(JSON.stringify({ ok:false, error:"Invalid request body"}), { status: 500, headers: { "content-type": "application/json" } }); }
   }
-  
-  // Delete frontier data
   if (path.startsWith("data/") && request.method === "DELETE") {
     const key = path.replace("data/", "");
-    if (!key) {
-      return new Response(JSON.stringify({ ok: false, error: "Invalid key" }), {
-        status: 400,
-        headers: { "content-type": "application/json" }
-      });
-    }
-    
+    if (!key) return new Response(JSON.stringify({ ok:false, error:"Invalid key"}), { status: 400, headers: { "content-type": "application/json" } });
     try {
       await env.JACK_STORAGE.delete(KV_KEYS.FRONTIER_PREFIX + key);
-      return new Response(JSON.stringify({ ok: true, message: "Data deleted successfully" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    } catch (error) {
-      return new Response(JSON.stringify({ ok: false, error: "Failed to delete data" }), {
-        status: 500,
-        headers: { "content-type": "application/json" }
-      });
-    }
+      return new Response(JSON.stringify({ ok:true, message:"Data deleted successfully"}), { status: 200, headers: { "content-type": "application/json" } });
+    } catch { return new Response(JSON.stringify({ ok:false, error:"Failed to delete data"}), { status: 500, headers: { "content-type": "application/json" } }); }
   }
-  
-  return new Response(JSON.stringify({ ok: false, error: "Method not allowed" }), {
-    status: 405,
-    headers: { "content-type": "application/json" }
-  });
+  return new Response(JSON.stringify({ ok:false, error:"Method not allowed"}), { status: 405, headers: { "content-type": "application/json" } });
 }
-
+// === end Admin Handlers ===
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -4561,23 +4377,7 @@ export default {
       
       // API routes
       // Admin panel
-      
-      // Admin API routes
-      if (path.startsWith("/admin/adapters/")) {
-        if (typeof handleAdminAdapters === "function") {
-          return withCors(await handleAdminAdapters(request, env), request);
-        } else {
-          return withCors(new Response(JSON.stringify({ error: "Not Implemented" }), { status: 501, headers: { "content-type": "application/json" } }), request);
-        }
-      }
-      if (path.startsWith("/admin/frontier/")) {
-        if (typeof handleAdminFrontier === "function") {
-          return withCors(await handleAdminFrontier(request, env), request);
-        } else {
-          return withCors(new Response(JSON.stringify({ error: "Not Implemented" }), { status: 501, headers: { "content-type": "application/json" } }), request);
-        }
-      }
-if (path === "/admin") {
+      if (path === "/admin") {
         return withCors(new Response(ADMIN_PANEL_HTML, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }), request);
       }
       
@@ -4676,5 +4476,3 @@ function getRequiredEnv(env, key, msg) {
 const ICON_192_BYTES = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,0,0,0,28,73,68,65,84,8,153,99,96,96,96,96,96,96,96,0,0,3,17,1,0,199,136,16,0,13,0,1,0,1,2,0,170,51,6,41,0,0,0,0,73,69,78,68,174,66,96,130]);
 const ICON_512_BYTES = ICON_192_BYTES;
 // ==== end embedded icons ====
-
-};
