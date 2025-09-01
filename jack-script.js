@@ -1165,11 +1165,15 @@ async function getPlayableMeta(uStr) {
 
 // -------------------- Main API Handler --------------------
 async function handleAggregate(request, env, ctx) {
-  // Handle preflight
+    // Add these declarations at the top of the function
+  let fetched_total = 0, dropped_paywall = 0, dropped_dead = 0;
+  let dropped_forbidden = 0, dropped_removed = 0, dropped_not_video = 0;
+  let dropped_fallback_not_video = 0, dropped_orientation = 0;
+  const errorLog = [];
+    // Handle preflight
   if (request.method === 'OPTIONS') {
   const headers = corsHeadersFor(request);
   return new Response(null, { status: 204, headers });
-}
   }
   
   if (request.method !== "GET") {
