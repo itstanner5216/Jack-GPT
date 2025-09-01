@@ -242,34 +242,6 @@ function addCorsHeaders(response, request) {
   });
 }
 
-  headers.set('Vary', 'Origin');
-  const origin = request.headers.get('Origin');
-  if (origin && isAllowedOrigin(origin)) {
-    headers.set('Access-Control-Allow-Origin', origin);
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
-  });
-}
-    
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders
-    });
-  }
-  
-  // If it's raw data to be converted to a Response
-  return new Response(response, {
-    headers: {
-      ...CORS_HEADERS,
-      "content-type": "application/json; charset=utf-8"
-    }
-  });
-}
-
 // Path joining
 function joinPath(base, leaf) {
   const b = base.endsWith("/") ? base.slice(0, -1) : base;
