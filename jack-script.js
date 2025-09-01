@@ -223,7 +223,24 @@ async function withAuth(handler, request, env) {
 // --- End JWT utilities ---
 // CORS handling
 function addCorsHeaders(response, request) {
-  const headers = new Headers(response.headers || {}
+  const headers = new Headers(response.headers || {});
+
+  // Set CORS headers
+  headers.set('Vary', 'Origin');
+  const origin = request.headers.get('Origin');
+
+  // Check if the request's origin is in our allowed list
+  if (origin && isAllowedOrigin(origin)) {
+    headers.set('Access-Control-Allow-Origin', origin);
+  }
+
+  // Return a new response with the original body/status and the new headers
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: headers // Use the new headers object
+  });
+}
 
   headers.set('Vary', 'Origin');
   const origin = request.headers.get('Origin');
