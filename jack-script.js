@@ -1608,19 +1608,8 @@ const PORTAL_HTML = `<!DOCTYPE html>
       padding: 8px;
       cursor: pointer;
       display: none;
-    }
-    
+
     .voice-search {
-      position: absolute;
-      right: 46px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      background: transparent;
-    border: none;
-    color: var(
-.voice-search {
       position: absolute;
       right: 46px;
       top: 50%;
