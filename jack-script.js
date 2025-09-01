@@ -94,7 +94,137 @@ const UA_MOBILE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleW
 // -------------------- Utility Functions --------------------
 // CORS handling
 function addCorsHeaders(response, request) {
-  const headers = new Headers(response.headers);
+  const headers = new Headers(response.headers || {}
+// --- JWT utilities for admin auth ---
+const JWT_TTL = 60 * 60 * 8; // 8 hours
+
+async function base64UrlEncode(buffer) {
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  switch (str.length % 4) {
+    case 0: break;
+    case 2: str += '=='; break;
+    case 3: str += '='; break;
+    default: throw new Error('Invalid base64url string');
+  }
+  const binaryStr = atob(str);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function createHmacSignature(data, secret) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+  return await base64UrlEncode(sig);
+}
+
+async function generateJWT(payload, secret) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const enc = new TextEncoder();
+  const encHeader = btoa(JSON.stringify(header)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const encPayload = btoa(JSON.stringify(payload)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const data = encHeader + "." + encPayload;
+  const sig = await createHmacSignature(data, secret);
+  return data + "." + sig;
+}
+
+async function verifyJWT(token, secret) {
+  if (!token) return { valid: false, reason: 'missing_token' };
+  const parts = token.split('.');
+  if (parts.length !== 3) return { valid: false, reason: 'malformed_token' };
+  const [encHeader, encPayload, sig] = parts;
+  const expected = await createHmacSignature(encHeader + "." + encPayload, secret);
+  if (sig !== expected) return { valid: false, reason: 'invalid_signature' };
+  try {
+    const decoder = new TextDecoder();
+    const payloadBuf = base64UrlDecode(encPayload);
+    const payload = JSON.parse(decoder.decode(payloadBuf));
+    const now = Math.floor(Date.now()/1000);
+    const CLOCK_SKEW_SECONDS = 30;
+    if (payload.exp && payload.exp < now - CLOCK_SKEW_SECONDS) {
+      return { valid: false, reason: 'token_expired' };
+    }
+    if (!payload.sub || !payload.iat || !payload.exp || !payload.jti) {
+      return { valid: false, reason: 'missing_required_claims' };
+    }
+    return { valid: true, payload };
+  } catch (e) {
+    return { valid: false, reason: 'validation_error' };
+  }
+}
+
+async function revokeToken(env, jti, exp) {
+  try {
+    if (!env?.JACK_STORAGE) return false;
+    await env.JACK_STORAGE.put(`jwt:revoked:${jti}`, '1', { expiration: exp });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isRevoked(env, jti) {
+  if (!env?.JACK_STORAGE) return false;
+  const v = await env.JACK_STORAGE.get(`jwt:revoked:${jti}`);
+  return !!v;
+}
+
+async function authenticate(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { authenticated: false, reason: 'missing_auth_header' };
+  }
+  const token = authHeader.substring(7);
+  const secret = env?.JWT_SECRET;
+  if (!secret) {
+    return { authenticated: false, reason: 'server_misconfigured' };
+  }
+  const res = await verifyJWT(token, secret);
+  if (!res.valid) return { authenticated: false, reason: res.reason };
+  if (await isRevoked(env, res.payload.jti)) {
+    return { authenticated: false, reason: 'revoked' };
+  }
+  return { authenticated: true, user: res.payload };
+}
+
+async function withAuth(handler, request, env) {
+  if (request.method === 'OPTIONS') {
+    const headers = {
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Max-Age': '86400',
+      'Vary': 'Origin'
+    };
+    const origin = request.headers.get('Origin');
+    if (origin && isAllowedOrigin(origin)) headers['Access-Control-Allow-Origin'] = origin;
+    return new Response(null, { status: 204, headers });
+  }
+  const auth = await authenticate(request, env);
+  if (!auth.authenticated) {
+    const status = (auth.reason === 'token_expired' || auth.reason === 'missing_auth_header') ? 401 : 403;
+    const headers = {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': 'Bearer',
+      'Vary': 'Origin'
+    };
+    const origin = request.headers.get('Origin');
+    if (origin && isAllowedOrigin(origin)) headers['Access-Control-Allow-Origin'] = origin;
+    return new Response(JSON.stringify({ error: 'Authentication required', status }), { status, headers });
+  }
+  return handler(request, env, auth.user);
+}
+// --- End JWT utilities ---
+);
   headers.set('Vary', 'Origin');
   const origin = request.headers.get('Origin');
   if (origin && isAllowedOrigin(origin)) {
@@ -106,7 +236,22 @@ function addCorsHeaders(response, request) {
     headers
   });
 }
-
+    
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders
+    });
+  }
+  
+  // If it's raw data to be converted to a Response
+  return new Response(response, {
+    headers: {
+      ...CORS_HEADERS,
+      "content-type": "application/json; charset=utf-8"
+    }
+  });
+}
 
 // Path joining
 function joinPath(base, leaf) {
