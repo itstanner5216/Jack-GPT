@@ -1231,10 +1231,10 @@ async function handleAggregate(request, env, ctx) {
   let searchMode = (url.searchParams.get("mode") || "normal").trim().toLowerCase();
 if (siteQuery && /[\s"]/g.test(siteQuery)) siteQuery = null;
 const DEBUG = url.searchParams.get("debug") === "1" || String(env?.DEBUG || "").toLowerCase() === "true";
-
+// ...after the 'const DEBUG =' line
+const wantRange = parseDurationQuery(durationQuery); 
   // Analytics tracking
   const requestId = url.searchParams.get("reqId") || crypto.randomUUID();
-
     // Initialize the enhanced search service
     const searchService = new EnhancedSearchService(env);
     // Build search options
@@ -1628,6 +1628,7 @@ const PORTAL_HTML = `<!DOCTYPE html>
       padding: 8px;
       cursor: pointer;
       display: none;
+      } /*
 
     .voice-search {
       position: absolute;
