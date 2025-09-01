@@ -1170,7 +1170,6 @@ async function handleAggregate(request, env, ctx) {
   const headers = corsHeadersFor(request);
   return new Response(null, { status: 204, headers });
 }
-    });
   }
   
   if (request.method !== "GET") {
