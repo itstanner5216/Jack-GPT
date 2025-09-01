@@ -92,9 +92,6 @@ const UA_DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 const UA_MOBILE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 
 // -------------------- Utility Functions --------------------
-// CORS handling
-function addCorsHeaders(response, request) {
-  const headers = new Headers(response.headers || {}
 // --- JWT utilities for admin auth ---
 const JWT_TTL = 60 * 60 * 8; // 8 hours
 
@@ -224,7 +221,10 @@ async function withAuth(handler, request, env) {
   return handler(request, env, auth.user);
 }
 // --- End JWT utilities ---
-);
+// CORS handling
+function addCorsHeaders(response, request) {
+  const headers = new Headers(response.headers || {}
+
   headers.set('Vary', 'Origin');
   const origin = request.headers.get('Origin');
   if (origin && isAllowedOrigin(origin)) {
